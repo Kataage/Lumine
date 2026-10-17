@@ -1891,6 +1891,41 @@ internal static class Program
 
         window.Close();
         Dispatcher.UIThread.RunJobs();
+
+        // Real bounded 512-entry decoded-cache setting must allow the
+        // matching 1024 lightweight descriptor horizon, rather than
+        // silently retaining only the old 256 and sending resident tiles
+        // down the slow async foreground source path.
+        await using var largeSession = new ViewerSession(
+            new DirectFixtureAssetProvider(2_048),
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                PrefetchRows = 0,
+                DecodedBitmapEntryLimit = 512,
+                DecodedBitmapByteLimit = 256L * 1024 * 1024
+            });
+        var largeViewer = new ThumbnailViewerControl(largeSession);
+        var descriptorAsset = await largeSession.GetAssetAsync(0);
+        for (var index = 0; index < 1_100; index++)
+        {
+            largeViewer.RegisterWarmPresentationForSmoke(
+                index, descriptorAsset,
+                new ViewerThumbnail(
+                    "descriptor-" + index.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    string.Empty, 1, 1,
+                    EncodedBytes: [1]));
+        }
+
+        Require(
+            largeViewer.WarmPresentationDescriptorLimitForSmoke == 1_024
+            && largeViewer.WarmTileEntryCountForSmoke == 1_024
+            && !largeViewer.IsAssetWarmForSmoke(75)
+            && largeViewer.IsAssetWarmForSmoke(76)
+            && largeViewer.IsAssetWarmForSmoke(1_099)
+            && largeViewer.FirstWarmAssetIndexForSmoke == 76,
+            "Large decoded Bitmap capacity did not retain exactly the bounded warm descriptor horizon.");
     }
 
     private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
