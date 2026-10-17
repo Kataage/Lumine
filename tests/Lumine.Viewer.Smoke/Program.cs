@@ -1822,7 +1822,7 @@ internal static class Program
                 .ResolveWarmPresentationDescriptorLimitForSmoke(2048) == 1024
             && ThumbnailViewerControl
                 .ResolveWarmPresentationDescriptorLimitForSmoke(0) == 16
-            && viewer.WarmPresentationDescriptorLimitForSmoke >= 16,
+            && viewer.WarmPresentationDescriptorLimitForSmoke == 128,
             "Warm presentation descriptors were truncated below the configured decoded Bitmap cache capacity.");
 
         // Every newly attached tile attempts exactly one warm lookup.
