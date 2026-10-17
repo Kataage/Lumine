@@ -1832,7 +1832,7 @@ internal static class Program
         var memoryDescriptor = new ViewerThumbnail(
             "memory-warm-key", string.Empty, 1, 1,
             EncodedBytes: new byte[4096]);
-        var memoryCache = new DecodedBitmapCache(4, 4 * 1024 * 1024);
+        var memoryCache = new DecodedBitmapCache(4, 4 * 1024 * 1024, 384);
         var memoryIdentity = memoryCache.ResolveWarmCacheIdentity(
             memoryDescriptor);
         var fileIdentity = memoryCache.ResolveWarmCacheIdentity(
