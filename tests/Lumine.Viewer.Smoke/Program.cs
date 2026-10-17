@@ -1831,7 +1831,7 @@ internal static class Program
         // This also must match the cache's actual resident lookup key.
         var memoryDescriptor = new ViewerThumbnail(
             "memory-warm-key", string.Empty, 1, 1,
-            EncodedBytes: new byte[4096]);
+            EncodedBytes: File.ReadAllBytes(thumbnailPath));
         var memoryCache = new DecodedBitmapCache(4, 4 * 1024 * 1024, 384);
         var memoryIdentity = memoryCache.ResolveWarmCacheIdentity(
             memoryDescriptor);
@@ -1847,6 +1847,18 @@ internal static class Program
             && !memoryCache.TryAcquireExistingByCacheIdentity(
                 memoryIdentity, out _),
             "Warm descriptors failed to retain only bounded native cache identities.");
+        using (var originalBitmap = await memoryCache.AcquireAsync(
+            memoryDescriptor))
+        {
+            Require(
+                memoryCache.TryAcquireExistingByCacheIdentity(
+                    memoryIdentity, out var warmBitmap)
+                && warmBitmap is not null
+                && ReferenceEquals(originalBitmap.Bitmap, warmBitmap.Bitmap),
+                "Key-only MemoryOnly descriptor could not reuse a decoded resident Bitmap.");
+            warmBitmap.Dispose();
+        }
+
         await memoryCache.DisposeAsync();
 
         // Every newly attached tile attempts exactly one warm lookup.
