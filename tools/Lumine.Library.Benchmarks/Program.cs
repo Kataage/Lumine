@@ -102,6 +102,15 @@ long[] metadataCommitLatencyBuckets = new long[5];
 // the 32ms+ tail is clustered or periodic, without extra I/O inside the gate.
 long[] metadataCommitWindowTicks = new long[10];
 long[] metadataCommitWindowSlow32Count = new long[10];
+// These fixed 1,000-write host-side samples align with the existing COMMIT
+// windows. They help distinguish CPU/GC load from waits, but DO NOT by
+// themselves prove a checkpoint or storage-device cause.
+long[] metadataHostWindowWallTicks = new long[10];
+long[] metadataHostWindowCpuTicks = new long[10];
+long[] metadataHostWindowGcPauseTicks = new long[10];
+int[] metadataHostWindowGen2Collections = new int[10];
+long[] metadataHostWindowUtcUnixMs = new long[10];
+var metadataHostCompletedWindows = 0;
 // Bounded 1-based ordinals retain precise sparse spikes without an
 // allocation/logging operation on each individual COMMIT hot path.
 int[] metadataCommitSlow32Ordinals = new int[256];
@@ -261,6 +270,15 @@ try
         GC.GetGCMemoryInfo(GCKind.FullBlocking).HeapSizeBytes;
 
     var metadataTarget = Math.Min(count, 10_000);
+    // Sample process-wide host counters ONLY once per 1,000 actual writes,
+    // not per transaction. The unchanged 10k individual-COMMIT timing,
+    // source guards and 8s acceptance gate remain authoritative. CPU time
+    // includes all process threads; GC pause is not a SQLite checkpoint.
+    using var metadataHostProcess = Process.GetCurrentProcess();
+    var metadataHostWindowStarted = Stopwatch.GetTimestamp();
+    var metadataHostPreviousCpuTicks = metadataHostProcess.TotalProcessorTime.Ticks;
+    var metadataHostPreviousGcPauseTicks = GC.GetTotalPauseDuration().Ticks;
+    var metadataHostPreviousGen2 = GC.CollectionCount(2);
     using (recorder.Measure(CoreMetricNames.LibraryTechnicalMetadataPersist))
     {
         AssetCursor? metadataCursor = null;
@@ -317,6 +335,29 @@ try
                 }
 
                 metadataPersisted++;
+                if (metadataPersisted % 1_000 == 0)
+                {
+                    var window = metadataPersisted / 1_000 - 1;
+                    var completedAt = Stopwatch.GetTimestamp();
+                    var cpuTicks = metadataHostProcess.TotalProcessorTime.Ticks;
+                    var gcPauseTicks = GC.GetTotalPauseDuration().Ticks;
+                    var gen2Collections = GC.CollectionCount(2);
+                    metadataHostWindowWallTicks[window] =
+                        Stopwatch.GetElapsedTime(metadataHostWindowStarted, completedAt).Ticks;
+                    metadataHostWindowCpuTicks[window] =
+                        Math.Max(0L, cpuTicks - metadataHostPreviousCpuTicks);
+                    metadataHostWindowGcPauseTicks[window] =
+                        Math.Max(0L, gcPauseTicks - metadataHostPreviousGcPauseTicks);
+                    metadataHostWindowGen2Collections[window] =
+                        Math.Max(0, gen2Collections - metadataHostPreviousGen2);
+                    metadataHostWindowUtcUnixMs[window] =
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    metadataHostCompletedWindows++;
+                    metadataHostWindowStarted = completedAt;
+                    metadataHostPreviousCpuTicks = cpuTicks;
+                    metadataHostPreviousGcPauseTicks = gcPauseTicks;
+                    metadataHostPreviousGen2 = gen2Collections;
+                }
                 if (proactiveEveryWrites != 0
                     && metadataPersisted % proactiveEveryWrites == 0)
                 {
@@ -452,6 +493,12 @@ try
             metadataWalNoopOutstanding =
                 metadataWalNoopFrames - metadataWalNoopCheckpointed;
         }
+    }
+
+    if (metadataHostCompletedWindows != metadataPersisted / 1_000)
+    {
+        throw new InvalidOperationException(
+            "Technical metadata host/COMMIT 1k diagnostic windows were incomplete.");
     }
 
     if (metadataPersisted != metadataTarget
@@ -815,6 +862,12 @@ try
             ["technical_metadata_commit_bucket_32_to_lt_128ms"] = metadataCommitLatencyBuckets[3].ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_commit_bucket_ge_128ms"] = metadataCommitLatencyBuckets[4].ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_commit_window_1000_ticks_csv"] = string.Join(",", metadataCommitWindowTicks.Select(static ticks => ticks.ToString(CultureInfo.InvariantCulture))),
+            ["technical_metadata_host_window_1000_completed"] = metadataHostCompletedWindows.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_host_window_1000_wall_ticks_csv"] = string.Join(",", metadataHostWindowWallTicks.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_process_cpu_ticks_csv"] = string.Join(",", metadataHostWindowCpuTicks.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_gc_pause_ticks_csv"] = string.Join(",", metadataHostWindowGcPauseTicks.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_gen2_collections_csv"] = string.Join(",", metadataHostWindowGen2Collections.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_utc_unix_ms_csv"] = string.Join(",", metadataHostWindowUtcUnixMs.Take(metadataHostCompletedWindows)),
             ["technical_metadata_commit_window_1000_ge_32ms_csv"] = string.Join(",", metadataCommitWindowSlow32Count.Select(static count => count.ToString(CultureInfo.InvariantCulture))),
             ["technical_metadata_commit_ge_32ms_ordinals_csv"] = string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored)),
             ["technical_metadata_commit_ge_32ms_ordinals_overflow"] = metadataCommitSlow32Overflow.ToString(CultureInfo.InvariantCulture),
@@ -863,6 +916,13 @@ try
     Console.WriteLine(
         $"Individual SQLite COMMIT 1k windows (ms): {string.Join(",", metadataCommitWindowTicks.Select(static ticks => (ticks / (double)TimeSpan.TicksPerMillisecond).ToString("F1", CultureInfo.InvariantCulture)))}; " +
         $">=32ms spikes/window: {string.Join(",", metadataCommitWindowSlow32Count)}.");
+    Console.WriteLine(
+        $"Individual SQLite COMMIT 1k host windows: " +
+        $"wall_ms=[{string.Join(",", metadataHostWindowWallTicks.Take(metadataHostCompletedWindows).Select(static ticks => (ticks / (double)TimeSpan.TicksPerMillisecond).ToString("F1", CultureInfo.InvariantCulture)))}]; " +
+        $"process_cpu_ms=[{string.Join(",", metadataHostWindowCpuTicks.Take(metadataHostCompletedWindows).Select(static ticks => (ticks / (double)TimeSpan.TicksPerMillisecond).ToString("F1", CultureInfo.InvariantCulture)))}]; " +
+        $"gc_pause_ms=[{string.Join(",", metadataHostWindowGcPauseTicks.Take(metadataHostCompletedWindows).Select(static ticks => (ticks / (double)TimeSpan.TicksPerMillisecond).ToString("F1", CultureInfo.InvariantCulture)))}]; " +
+        $"gen2_collections=[{string.Join(",", metadataHostWindowGen2Collections.Take(metadataHostCompletedWindows))}]. " +
+        "CPU includes all process threads, and low CPU with long COMMIT is not proof of disk I/O.");
     Console.WriteLine(
         $"Individual SQLite COMMIT >=32ms ordinal positions (1-based, first 256): " +
         $"{string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored))}; " +
