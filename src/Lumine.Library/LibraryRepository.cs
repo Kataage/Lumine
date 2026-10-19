@@ -12,6 +12,14 @@ public readonly record struct TechnicalMetadataWriteTimings(
     long MetadataUpsertTicks,
     long CommitTicks);
 
+/// <summary>
+/// Single source-guarded write result with successful COMMIT duration.
+/// Rejected writes have no COMMIT timing.
+/// </summary>
+public readonly record struct TechnicalMetadataSingleWriteResult(
+    bool Stored,
+    TechnicalMetadataWriteTimings? Timings);
+
 public sealed partial class LibraryRepository
 {
     private readonly LibraryDatabase _database;
@@ -144,6 +152,38 @@ public sealed partial class LibraryRepository
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? ReadAsset(reader)
             : null;
+    }
+
+    /// <summary>
+    /// Actual standalone transaction with the existing stage timing observer;
+    /// no new SQL, altered source guard or batch semantics.
+    /// </summary>
+    public async Task<TechnicalMetadataSingleWriteResult>
+        UpdateTechnicalMetadataMeasuredAsync(
+            long libraryId,
+            long assetId,
+            long expectedSourceRevision,
+            long expectedFileSize,
+            long expectedModifiedAtUtcTicks,
+            AssetTechnicalMetadata metadata,
+            CancellationToken cancellationToken = default)
+    {
+        TechnicalMetadataWriteTimings? stageTimings = null;
+        var stored = await UpdateTechnicalMetadataAsync(
+            libraryId,
+            assetId,
+            expectedSourceRevision,
+            expectedFileSize,
+            expectedModifiedAtUtcTicks,
+            metadata,
+            cancellationToken,
+            timings => stageTimings = timings).ConfigureAwait(false);
+        if (stored && stageTimings is null)
+        {
+            throw new InvalidOperationException(
+                "Committed metadata was missing its successful COMMIT timing.");
+        }
+        return new TechnicalMetadataSingleWriteResult(stored, stageTimings);
     }
 
     public async Task<bool> UpdateTechnicalMetadataAsync(
