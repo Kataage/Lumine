@@ -21,6 +21,7 @@ using Lumine.Image;
 using Lumine.Library;
 using Lumine.Viewer;
 using NetVips;
+using Microsoft.Data.Sqlite;
 
 static void Require(bool condition, string message)
 {
@@ -1248,6 +1249,107 @@ try
                 == warmBefore.CompletedWriteLatencyBuckets.Sum()
             && warmAfter.FailedGroups == warmBefore.FailedGroups,
             "Warm Viewer thumbnail reuse unexpectedly queued duplicate background metadata writes.");
+
+        // Issue #714: hold a real WAL writer so two same-source direct
+        // requests race *before* either COMMIT completes. This tests actual
+        // production single-flight admission rather than sequential LRU hits.
+        var duplicateAsset = ToBatchViewerAsset(realBatchPage.Items.Single(
+            item => item.RelativePath == "direct-foreground.png"));
+        var originalSource = directResults[0].Thumbnail.SourceMetadata
+            ?? throw new InvalidOperationException(
+                "Direct Viewer fixture lost its source metadata.");
+        var alteredSource = new SourceTechnicalMetadata(
+            originalSource.Width + 1,
+            originalSource.Height,
+            originalSource.RawWidth + 1,
+            originalSource.RawHeight,
+            originalSource.HasAlpha,
+            originalSource.Format,
+            originalSource.SourceIdentity,
+            false,
+            0);
+        var joinedBefore = ViewerImageMetadataBridge.JoinedMetadataRequests;
+        var committedBefore = ViewerImageMetadataBridge.DirectWriteDiagnostics;
+        var storedBefore = ViewerImageMetadataBridge.MetadataPersistenceWrites;
+        var duplicatePath = Path.Combine(realBatchRoot, "direct-foreground.png");
+        await using (var writerBlock = new SqliteConnection(
+            new SqliteConnectionStringBuilder
+            {
+                DataSource = realBatchDatabase,
+                Pooling = false
+            }.ToString()))
+        {
+            await writerBlock.OpenAsync();
+            using var holdingWriter = writerBlock.BeginTransaction();
+            await using (var writerCommand = writerBlock.CreateCommand())
+            {
+                writerCommand.Transaction = holdingWriter;
+                writerCommand.CommandText = """
+                    UPDATE libraries
+                    SET updated_at_utc_ticks = updated_at_utc_ticks
+                    WHERE id = $id;
+                    """;
+                writerCommand.Parameters.AddWithValue("$id", realBatchLibrary.Id);
+                Require(await writerCommand.ExecuteNonQueryAsync() == 1,
+                    "Duplicate-write test failed to hold SQLite writer lock.");
+            }
+
+            var first = ViewerImageMetadataBridge.PersistAsync(
+                realBatchService, realBatchLibrary.Id, duplicateAsset,
+                duplicatePath, alteredSource, CancellationToken.None).AsTask();
+            var second = ViewerImageMetadataBridge.PersistAsync(
+                realBatchService, realBatchLibrary.Id, duplicateAsset,
+                duplicatePath, alteredSource, CancellationToken.None).AsTask();
+            // A cancelled waiter must not cancel the underlying SQLite owner.
+            using var waiterCancellation = new CancellationTokenSource();
+            var cancelled = ViewerImageMetadataBridge.PersistAsync(
+                realBatchService, realBatchLibrary.Id, duplicateAsset,
+                duplicatePath, alteredSource, waiterCancellation.Token).AsTask();
+            Require(
+                ViewerImageMetadataBridge.JoinedMetadataRequests
+                    == joinedBefore + 2,
+                "Concurrent identical metadata requests were not joined.");
+            waiterCancellation.Cancel();
+            try
+            {
+                await cancelled;
+                throw new InvalidOperationException(
+                    "Cancelled duplicate waiter unexpectedly persisted.");
+            }
+            catch (OperationCanceledException) when (
+                waiterCancellation.IsCancellationRequested)
+            {
+                // Expected: owner and other waiter continue independently.
+            }
+            holdingWriter.Commit();
+            await Task.WhenAll(first, second);
+        }
+
+        var committedAfter = ViewerImageMetadataBridge.DirectWriteDiagnostics;
+        Require(
+            committedAfter.SuccessfulCommits == committedBefore.SuccessfulCommits + 1
+            && ViewerImageMetadataBridge.MetadataPersistenceWrites
+                == storedBefore + 1
+            && (await realBatchService.GetAssetAsync(
+                realBatchLibrary.Id, "direct-foreground.png"))?.Width
+                == originalSource.Width + 1,
+            "Identical concurrent Viewer writes caused duplicate SQLite COMMITs.");
+
+        Require(await realBatchService.UpdateTechnicalMetadataAsync(
+                realBatchLibrary.Id,
+                duplicateAsset.Id,
+                duplicateAsset.SourceRevision,
+                duplicateAsset.FileSize,
+                duplicateAsset.ModifiedAtUtcTicks,
+                new AssetTechnicalMetadata(
+                    originalSource.Width,
+                    originalSource.Height,
+                    originalSource.RawWidth,
+                    originalSource.RawHeight,
+                    originalSource.HasAlpha,
+                    originalSource.Format,
+                    originalSource.SourceIdentity)),
+            "Duplicate-write smoke could not restore the fixture metadata.");
 
         Console.WriteLine(
             $"Real Viewer background metadata: {backgroundFixtureCount} PNGs, " +
