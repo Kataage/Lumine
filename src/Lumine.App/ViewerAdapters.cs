@@ -603,6 +603,9 @@ internal readonly record struct ViewerDirectMetadataWriteDiagnostics(
 internal static class ViewerImageMetadataBridge
 {
     private const int PersistedMetadataCacheLimit = 8192;
+    // Share only identical writes already in flight; when full, preserve
+    // the original independently source-guarded write behavior.
+    private const int MaxInFlightMetadataKeys = 128;
     private static long _directSuccessfulCommits;
     private static long _directRepositoryServiceTicks;
     private static long _directMaxRepositoryServiceTicks;
@@ -642,6 +645,11 @@ internal static class ViewerImageMetadataBridge
     }
 
     private static readonly object PersistedMetadataGate = new();
+    // A direct foreground request must never join the background batch queue.
+    private static readonly Dictionary<
+        (PersistedMetadataKey Key, bool PreferBatch), TaskCompletionSource<bool>>
+        InFlightMetadataWrites = [];
+    private static long _joinedMetadataRequests;
     private static readonly Dictionary<PersistedMetadataKey, LinkedListNode<PersistedMetadataKey>>
         PersistedMetadata = [];
     private static readonly LinkedList<PersistedMetadataKey> PersistedMetadataLru = [];
@@ -649,6 +657,9 @@ internal static class ViewerImageMetadataBridge
 
     internal static long MetadataPersistenceWrites =>
         Interlocked.Read(ref _metadataPersistenceWrites);
+
+    internal static long JoinedMetadataRequests =>
+        Interlocked.Read(ref _joinedMetadataRequests);
 
     public static ThumbnailSource CreateThumbnailSource(
         ViewerAsset asset,
@@ -861,11 +872,10 @@ internal static class ViewerImageMetadataBridge
             asset,
             metadata);
 
-        if (IsRemembered(key))
-        {
-            return;
-        }
-
+        // The LRU read and in-flight election are atomic, preventing two
+        // same-source requests from crossing the check/start-write gap.
+        // Partition by route so foreground does not await batch coalescing.
+        var flightKey = (Key: key, PreferBatch: preferBatch);
         var technical = new AssetTechnicalMetadata(
             metadata.Width,
             metadata.Height,
@@ -874,51 +884,109 @@ internal static class ViewerImageMetadataBridge
             metadata.HasAlpha,
             metadata.Format,
             metadata.SourceIdentity);
-        bool persisted;
-        if (preferBatch)
+
+        while (true)
         {
-            persisted = await ViewerTechnicalMetadataBatcher.For(library).WriteAsync(
-                libraryId,
-                new TechnicalMetadataBatchItem(
-                    asset.Id,
-                    asset.SourceRevision,
-                    asset.FileSize,
-                    asset.ModifiedAtUtcTicks,
-                    technical),
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            // Foreground and interactive writes bypass background batching.
-            // Measure successful single COMMITs separately from decode and
-            // service work, without changing the existing source guard.
-            var serviceStarted = Stopwatch.GetTimestamp();
-            var write = await library.UpdateTechnicalMetadataMeasuredAsync(
-                libraryId,
-                asset.Id,
-                asset.SourceRevision,
-                asset.FileSize,
-                asset.ModifiedAtUtcTicks,
-                technical,
-                cancellationToken).ConfigureAwait(false);
-            persisted = write.Stored;
-            if (persisted)
+            Task<bool>? joining = null;
+            TaskCompletionSource<bool>? owner = null;
+            lock (PersistedMetadataGate)
             {
-                RecordDirectWrite(
-                    Stopwatch.GetElapsedTime(serviceStarted).Ticks,
-                    write.Timings!.Value.CommitTicks);
+                if (IsRememberedLocked(key))
+                {
+                    return;
+                }
+
+                if (InFlightMetadataWrites.TryGetValue(flightKey, out var pending))
+                {
+                    joining = pending.Task;
+                    Interlocked.Increment(ref _joinedMetadataRequests);
+                }
+                else if (InFlightMetadataWrites.Count < MaxInFlightMetadataKeys)
+                {
+                    owner = new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+                    InFlightMetadataWrites.Add(flightKey, owner);
+                }
+            }
+
+            if (joining is not null)
+            {
+                // Waiter cancellation never cancels another request's COMMIT.
+                // A failed owner lets survivors make a fresh guarded attempt.
+                if (await joining.WaitAsync(cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            var ownerSucceeded = false;
+            try
+            {
+                bool persisted;
+                if (preferBatch)
+                {
+                    persisted = await ViewerTechnicalMetadataBatcher.For(library)
+                        .WriteAsync(
+                            libraryId,
+                            new TechnicalMetadataBatchItem(
+                                asset.Id,
+                                asset.SourceRevision,
+                                asset.FileSize,
+                                asset.ModifiedAtUtcTicks,
+                                technical),
+                            cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    // Preserve immediate direct-write path and COMMIT telemetry.
+                    var serviceStarted = Stopwatch.GetTimestamp();
+                    var write = await library.UpdateTechnicalMetadataMeasuredAsync(
+                        libraryId,
+                        asset.Id,
+                        asset.SourceRevision,
+                        asset.FileSize,
+                        asset.ModifiedAtUtcTicks,
+                        technical,
+                        cancellationToken).ConfigureAwait(false);
+                    persisted = write.Stored;
+                    if (persisted)
+                    {
+                        RecordDirectWrite(
+                            Stopwatch.GetElapsedTime(serviceStarted).Ticks,
+                            write.Timings!.Value.CommitTicks);
+                    }
+                }
+
+                if (!persisted)
+                {
+                    throw new ImageSourceChangedException(
+                        sourcePath,
+                        "Library source revision advanced before technical metadata could be committed.");
+                }
+
+                Interlocked.Increment(ref _metadataPersistenceWrites);
+                RememberPersisted(key);
+                ownerSucceeded = true;
+                return;
+            }
+            finally
+            {
+                if (owner is not null)
+                {
+                    lock (PersistedMetadataGate)
+                    {
+                        InFlightMetadataWrites.Remove(flightKey);
+                    }
+
+                    // Remove before notifying so a failure cannot trap waiters
+                    // retrying the same already-completed task forever.
+                    owner.TrySetResult(ownerSucceeded);
+                }
             }
         }
-
-        if (!persisted)
-        {
-            throw new ImageSourceChangedException(
-                sourcePath,
-                "Library source revision advanced before technical metadata could be committed.");
-        }
-
-        Interlocked.Increment(ref _metadataPersistenceWrites);
-        RememberPersisted(key);
     }
 
     private static async Task<ViewerAsset> RefreshChangedSourceAsync(
@@ -989,19 +1057,17 @@ internal static class ViewerImageMetadataBridge
             asset.RawHeight,
             asset.HasAlpha);
 
-    private static bool IsRemembered(PersistedMetadataKey key)
+    // Always called under PersistedMetadataGate, jointly with write election.
+    private static bool IsRememberedLocked(PersistedMetadataKey key)
     {
-        lock (PersistedMetadataGate)
+        if (!PersistedMetadata.TryGetValue(key, out var node))
         {
-            if (!PersistedMetadata.TryGetValue(key, out var node))
-            {
-                return false;
-            }
-
-            PersistedMetadataLru.Remove(node);
-            PersistedMetadataLru.AddFirst(node);
-            return true;
+            return false;
         }
+
+        PersistedMetadataLru.Remove(node);
+        PersistedMetadataLru.AddFirst(node);
+        return true;
     }
 
     private static void RememberPersisted(
@@ -1049,6 +1115,8 @@ internal static class ViewerImageMetadataBridge
         long LibraryId,
         long AssetId,
         long SourceRevision,
+        long FileSize,
+        long ModifiedAtUtcTicks,
         string SourceIdentity,
         int Width,
         int Height,
@@ -1067,6 +1135,8 @@ internal static class ViewerImageMetadataBridge
                 libraryId,
                 asset.Id,
                 asset.SourceRevision,
+                asset.FileSize,
+                asset.ModifiedAtUtcTicks,
                 metadata.SourceIdentity,
                 metadata.Width,
                 metadata.Height,
