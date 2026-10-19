@@ -168,6 +168,39 @@ if ($windowTicks.Count -ne 10 -or $windowSlow.Count -ne 10 -or
     ($windowSlow | Where-Object { $_ -gt 1000 }).Count -gt 0) {
     throw "10k individual COMMIT window totals disagree with the original production timing evidence."
 }
+# Issue #714: require the new process-wide host evidence to line up with
+# all ten independently-committed 1k windows. Process CPU may exceed elapsed
+# wall time on multicore; it must never be treated as a raw COMMIT duration.
+$hostWindowCount = [int]$hundredK.metadata.technical_metadata_host_window_1000_completed
+if ($hostWindowCount -ne 10) {
+    throw "100k strict Library result did not capture all ten 1k host windows."
+}
+$hostWindows = @{}
+foreach ($field in @("wall_ticks", "process_cpu_ticks", "gc_pause_ticks", "gen2_collections", "utc_unix_ms")) {
+    $key = "technical_metadata_host_window_1000_${field}_csv"
+    $raw = [string]$hundredK.metadata.$key
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "Required SQLite COMMIT host-window diagnostic missing: $key"
+    }
+    $values = @($raw.Split(',') | ForEach-Object {
+        [long]$parsed = 0
+        if (-not [long]::TryParse($_, [ref]$parsed) -or $parsed -lt 0) {
+            throw "Invalid COMMIT host-window diagnostic in $key."
+        }
+        $parsed
+    })
+    if ($values.Count -ne $hostWindowCount) {
+        throw "COMMIT host-window diagnostic length mismatch in $key."
+    }
+    $hostWindows[$field] = $values
+}
+for ($index = 0; $index -lt $hostWindowCount; $index++) {
+    if ($hostWindows["wall_ticks"][$index] -lt $windowTicks[$index] -or
+        $hostWindows["utc_unix_ms"][$index] -le 0) {
+        throw "COMMIT/host window $index had less elapsed time than its SQLite COMMITs or no UTC timestamp."
+    }
+}
+Write-Host "100k strict COMMIT host timing: 10 aligned, bounded 1k windows of CPU/GC/wall/UTC evidence (diagnostic only)."
 # Sparse >32ms COMMIT ordinals make the interval between stalls
 # observable without adding any SQL/checkpoints, disk I/O, or logging to
 # the 10k production-write hot loop. Ordinals are 1-based and bounded.
