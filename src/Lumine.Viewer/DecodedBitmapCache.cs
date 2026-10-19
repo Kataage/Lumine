@@ -169,24 +169,31 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
 
     public bool TryAcquireExisting(
         ViewerThumbnail thumbnail,
-        out DecodedBitmapLease? lease)
+        out DecodedBitmapLease? lease) =>
+        TryAcquireExistingByCacheIdentity(
+            ResolveWarmCacheIdentity(thumbnail), out lease);
+
+    // A Viewer warm descriptor needs this identity, not the potentially
+    // large EncodedBytes byte[] from MemoryOnly thumbnail generation.
+    // Reuse the exact same cache keys as actual bitmap admission.
+    internal string? ResolveWarmCacheIdentity(ViewerThumbnail thumbnail)
     {
         ArgumentNullException.ThrowIfNull(thumbnail);
 
-        string? key = null;
         if (thumbnail.EncodedBytes is { Length: > 0 })
         {
-            key =
-                "memory:"
-                + thumbnail.CacheKey;
-        }
-        else if (!string.IsNullOrWhiteSpace(
-                     thumbnail.CachePath))
-        {
-            key = ThumbnailFileKey(
-                thumbnail.CachePath);
+            return "memory:" + thumbnail.CacheKey;
         }
 
+        return !string.IsNullOrWhiteSpace(thumbnail.CachePath)
+            ? ThumbnailFileKey(thumbnail.CachePath)
+            : null;
+    }
+
+    internal bool TryAcquireExistingByCacheIdentity(
+        string? key,
+        out DecodedBitmapLease? lease)
+    {
         if (key is null)
         {
             lease = null;

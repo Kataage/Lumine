@@ -129,12 +129,21 @@ public sealed class ThumbnailViewerControl : UserControl
     private const double GridOuterPadding = 12;
     private const double GridCornerRadius = 10;
 
+    // A memory-led viewport can decode >256 nearby tiles when the owner
+    // raises the decoded Bitmap budget. Keeping only 256 index->bitmap
+    // descriptors then makes already-resident bitmaps invisible to the
+    // instant warm-tile path. Descriptors do NOT pin a Bitmap lease;
+    // match their bounded horizon to the configured native entry count.
     private int WarmPresentationLimit =>
-        Math.Max(
-            16,
-            Math.Min(
-                256,
-                _session.Options.DecodedBitmapEntryLimit * 2));
+        ResolveWarmPresentationDescriptorLimitForSmoke(
+            _session.Options.DecodedBitmapEntryLimit);
+
+    internal int WarmPresentationDescriptorLimitForSmoke =>
+        WarmPresentationLimit;
+
+    internal static int ResolveWarmPresentationDescriptorLimitForSmoke(
+        int decodedEntryLimit) =>
+        (int)Math.Clamp((long)decodedEntryLimit * 2, 16, 1024);
 
     public ThumbnailViewerControl(
         ViewerSession session,
@@ -576,6 +585,14 @@ public sealed class ThumbnailViewerControl : UserControl
 
     internal bool IsAssetWarmForSmoke(long index) =>
         _warmPresentations.ContainsKey(index);
+
+    // Exercise the real descriptor insertion/eviction policy without
+    // performing redundant thumbnail file I/O or native Bitmap decodes.
+    internal void RegisterWarmPresentationForSmoke(
+        long index,
+        ViewerAsset asset,
+        ViewerThumbnail thumbnail) =>
+        RememberWarmPresentation(index, asset, thumbnail);
 
     internal long? FirstWarmAssetIndexForSmoke =>
         _warmPresentationLru.First?.Value;
@@ -1161,6 +1178,13 @@ public sealed class ThumbnailViewerControl : UserControl
         ViewerAsset asset,
         ViewerThumbnail thumbnail)
     {
+        var cacheIdentity = _session.BitmapCache
+            .ResolveWarmCacheIdentity(thumbnail);
+        if (cacheIdentity is null)
+        {
+            return;
+        }
+
         if (_warmPresentations.Remove(
                 index,
                 out var previous))
@@ -1175,7 +1199,7 @@ public sealed class ThumbnailViewerControl : UserControl
         _warmPresentations[index] =
             new WarmPresentation(
                 asset,
-                thumbnail,
+                cacheIdentity,
                 node);
 
         while (_warmPresentations.Count
@@ -1229,8 +1253,8 @@ public sealed class ThumbnailViewerControl : UserControl
             return false;
         }
 
-        if (!_session.BitmapCache.TryAcquireExisting(
-                existing.Thumbnail,
+        if (!_session.BitmapCache.TryAcquireExistingByCacheIdentity(
+                existing.CacheIdentity,
                 out var acquired)
             || acquired is null)
         {
@@ -2663,8 +2687,12 @@ public sealed class ThumbnailViewerControl : UserControl
             if (_warmPresentations.TryGetValue(
                     index, out var warm))
             {
-                PromoteResidentWarmThumbnailForSmoke(
-                    session.BitmapCache, warm.Thumbnail);
+                if (session.BitmapCache.TryAcquireExistingByCacheIdentity(
+                        warm.CacheIdentity, out var lease)
+                    && lease is not null)
+                {
+                    lease.Dispose();
+                }
             }
         }
     }
@@ -3891,7 +3919,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private sealed record WarmPresentation(
         ViewerAsset Asset,
-        ViewerThumbnail Thumbnail,
+        string CacheIdentity,
         LinkedListNode<long> Node);
 
     internal readonly record struct ViewerTilePresentation(
