@@ -1123,6 +1123,7 @@ try
         };
         var realBatcher = ViewerTechnicalMetadataBatcher.For(realBatchService);
         var routeBefore = realBatcher.Diagnostics;
+        var directBefore = ViewerImageMetadataBridge.DirectWriteDiagnostics;
         var coldStarted = Stopwatch.GetTimestamp();
         var backgroundTasks = backgroundAssets
             .Select(item => realBatchProvider.RequestAsync(
@@ -1143,6 +1144,7 @@ try
         var directResults = await Task.WhenAll(directTasks);
         var coldElapsed = Stopwatch.GetElapsedTime(coldStarted);
         var routeAfter = realBatcher.Diagnostics;
+        var directAfter = ViewerImageMetadataBridge.DirectWriteDiagnostics;
         Require(
             backgroundResults.Length == backgroundFixtureCount
             && backgroundResults.All(static value =>
@@ -1178,6 +1180,15 @@ try
             && routeAfter.MaxBatchedCommitDurationTicks > 0
             && routeAfter.QueuedToSqliteServiceTicks
                 <= routeAfter.CompletedWriteLatencyTicks
+            && directAfter.SuccessfulCommits - directBefore.SuccessfulCommits
+                == directSpecs.Length
+            && directAfter.TotalCommitTicks > directBefore.TotalCommitTicks
+            && directAfter.TotalRepositoryServiceTicks
+                > directBefore.TotalRepositoryServiceTicks
+            && directAfter.TotalCommitTicks
+                <= directAfter.TotalRepositoryServiceTicks
+            && directAfter.MaxCommitTicks > 0
+            && directAfter.MaxRepositoryServiceTicks >= directAfter.MaxCommitTicks
             && routeAfter.BatchGroups2To8Rows + routeAfter.BatchGroups9To32Rows
                 + routeAfter.BatchGroups33To64Rows
                 == routeAfter.CommittedBatches
@@ -1249,6 +1260,10 @@ try
             $"cold_with_direct_ms={coldElapsed.TotalMilliseconds:F1}, " +
             $"direct_foreground_ms={directResults[0].ElapsedMs:F1}, " +
             $"direct_interactive_ms={directResults[1].ElapsedMs:F1}, " +
+            $"direct_commit_samples={directAfter.SuccessfulCommits - directBefore.SuccessfulCommits}, " +
+            $"direct_commit_total_ms={(directAfter.TotalCommitTicks - directBefore.TotalCommitTicks) / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+            $"direct_commit_max_ms={directAfter.MaxCommitTicks / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+            $"direct_sqlite_service_total_ms={(directAfter.TotalRepositoryServiceTicks - directBefore.TotalRepositoryServiceTicks) / (double)TimeSpan.TicksPerMillisecond:F1}, " +
             $"warm_revisit_ms={warmElapsed.TotalMilliseconds:F1}, " +
             $"warm_added_writes={warmAfter.QueuedWrites - warmBefore.QueuedWrites}.");
     }

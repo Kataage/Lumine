@@ -198,6 +198,26 @@ public sealed class LibraryService
             token => _repository.GetAssetAsync(libraryId, relativePath, token),
             cancellationToken);
 
+    public Task<TechnicalMetadataSingleWriteResult>
+        UpdateTechnicalMetadataMeasuredAsync(
+            long libraryId,
+            long assetId,
+            long expectedSourceRevision,
+            long expectedFileSize,
+            long expectedModifiedAtUtcTicks,
+            AssetTechnicalMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpdateTechnicalMetadataMeasuredAsync(
+                libraryId,
+                assetId,
+                expectedSourceRevision,
+                expectedFileSize,
+                expectedModifiedAtUtcTicks,
+                metadata,
+                token),
+            cancellationToken);
+
     public Task<bool> UpdateTechnicalMetadataAsync(
         long libraryId,
         long assetId,
