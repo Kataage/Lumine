@@ -124,7 +124,10 @@ jobs:
               [ref]$errors) | Out-Null
 
             if ($errors.Count -ne 0) {
-              $errors | ForEach-Object { Write-Error "$script : $($_.Message)" }
+              $errors | ForEach-Object {
+                Write-Host ("Script: {0}; line: {1}; column: {2}; error: {3}; token: {4}" -f
+                  $script, $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber, $_.Message, $_.Extent.Text)
+              }
               exit 1
             }
           }
