@@ -96,10 +96,18 @@ jobs:
             # termination. Observe a real process handle and wait for exit.
             $process = Start-Process -FilePath $exe -ArgumentList @(
               "--product-smoke", "--library-dir=$library"
-            ) -Wait -PassThru
-            if ($null -eq $process -or $process.ExitCode -ne 0) {
-              throw "NativeAOT portable product smoke process failed: $($process.ExitCode)"
+            ) -PassThru
+            if ($null -eq $process) { throw "NativeAOT smoke process did not start." }
+            try {
+              if (-not $process.WaitForExit(60000)) {
+                $process.Kill()
+                throw "NativeAOT portable product smoke did not exit within 60 seconds."
+              }
+              if ($process.ExitCode -ne 0) {
+                throw "NativeAOT portable product smoke process failed: $($process.ExitCode)"
+              }
             }
+            finally { $process.Dispose() }
             $data = Join-Path $dir "data"
             $db = Join-Path $data "library.db"
             if (-not (Test-Path -LiteralPath $db -PathType Leaf)) { throw "Portable data/library.db missing." }
