@@ -91,21 +91,36 @@ jobs:
           $library = Join-Path $env:RUNNER_TEMP "lumine-ux-preview-library"
           New-Item -ItemType Directory -Force -Path $library | Out-Null
           try {
-            # A Windows GUI-subsystem executable does not reliably assign
-            # PowerShell's LASTEXITCODE through &, and can be returned before
-            # termination. Observe a real process handle and wait for exit.
-            $process = Start-Process -FilePath $exe -ArgumentList @(
-              "--product-smoke", "--library-dir=$library"
-            ) -PassThru
+            # Use ProcessStartInfo with shell execution disabled, rather than
+            # Start-Process (whose shell/argument handling differs for WinExe).
+            # This guarantees the two literal CLI arguments reach Program.Main
+            # and supplies a real awaited ExitCode for the GUI subsystem.
+            $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $exe
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.WorkingDirectory = $dir
+            [void]$startInfo.ArgumentList.Add("--product-smoke")
+            [void]$startInfo.ArgumentList.Add("--library-dir=$library")
+            Write-Host ("Starting product-smoke with arguments: {0}" -f
+              ($startInfo.ArgumentList -join " "))
+            $process = [System.Diagnostics.Process]::Start($startInfo)
             if ($null -eq $process) { throw "NativeAOT smoke process did not start." }
             try {
               if (-not $process.WaitForExit(60000)) {
-                $process.Kill()
+                Write-Host "NativeAOT WinExe product smoke did not exit in 60 seconds."
+                try {
+                  $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction Stop
+                  Write-Host ("Observed Win32_Process.CommandLine: {0}" -f $procInfo.CommandLine)
+                } catch { Write-Warning ("Could not get command line: {0}" -f $_.Exception.Message) }
+                $process.Kill($true)
+                [void]$process.WaitForExit(5000)
                 throw "NativeAOT portable product smoke did not exit within 60 seconds."
               }
               if ($process.ExitCode -ne 0) {
                 throw "NativeAOT portable product smoke process failed: $($process.ExitCode)"
               }
+              Write-Host "NativeAOT product smoke exited cleanly with exit code 0."
             }
             finally { $process.Dispose() }
             $data = Join-Path $dir "data"
