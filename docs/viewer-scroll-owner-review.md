@@ -6,6 +6,20 @@
 
 製品版 `Lumine.App.exe` を通常起動し、実際の画像ライブラリでGridとListの小スクロール・連続ホイール・方向転換・遠方ジャンプ後の復帰を確認する。終了後、5項目の **y / n / s（未確認）** 回答を受け付け、`viewer-scroll-owner-report.json` と `VIEWER-SCROLL-CHECKLIST.md` を保存する。未実行の準備モードでは**すべてpending**、失敗項目はfail、未回答はpendingとなる。GPU名称は参考情報であり、物理GPU presentを計測したことにはならない。**自動的にIssueを完了扱いにしない。**
 
+## 推奨：#635との最終合同確認（1回のアプリ起動）
+
+#635の製品UI/UXが実機確認できる状態になった段階では、単独スクリプトを
+別途実行する必要はありません。製品側の
+`Run-ProductAcceptance.ps1 -InteractiveReview -IncludeViewerScrollReview`
+を実行すると、同じアプリ起動で10項目の製品チェックと**ここに記載された5項目**
+を観察できます。終了後に回答を記録し、別々の
+`product-summary.json` と `viewer-scroll-owner-report.json` が作られます。
+
+スクロールの質問定義は `build/ViewerScrollReviewChecks.ps1` に統一してあり、
+単独実行時と内容がずれません。どちらの方法でもCIやGPU名だけで実機合格を
+宣言せず、実画像でのオーナー確認が必須です。実行例と判定条件は
+[製品最終受け入れ](product-acceptance.md) を参照してください。
+
 ## 実行方法（Windows x64）
 
 [greenfield-core Windows CI](https://github.com/Kataage/Lumine/actions/workflows/v2-foundation.yml) の**成功したdevelop実行**から `lumine-product-acceptance-win-x64-<run-id>` を展開する。展開先でPowerShellを開き、以下を実行する。
