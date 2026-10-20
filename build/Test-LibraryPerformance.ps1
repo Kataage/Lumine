@@ -201,6 +201,46 @@ for ($index = 0; $index -lt $hostWindowCount; $index++) {
     }
 }
 Write-Host "100k strict COMMIT host timing: 10 aligned, bounded 1k windows of CPU/GC/wall/UTC evidence (diagnostic only)."
+
+# Native GetProcessIoCounters is Windows-only and includes this process's
+# other files/threads. These are accounting counts/bytes, never disk-wait
+# durations or causally attributed SQLite checkpoint timings.
+$processIoAvailable = [string]$hundredK.metadata.technical_metadata_host_process_io_available
+if ($processIoAvailable -notin @("true", "false")) {
+    throw "Technical metadata process I/O availability was not recorded."
+}
+if ($IsWindows -and $processIoAvailable -ne "true") {
+    throw "Windows Library strict benchmark did not capture Win32 process I/O counters."
+}
+$hostIoTotals = @{}
+foreach ($field in @("read_ops", "write_ops", "read_bytes", "write_bytes")) {
+    $key = "technical_metadata_host_window_1000_${field}_csv"
+    $raw = [string]$hundredK.metadata.$key
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "Required process I/O diagnostic missing: $key"
+    }
+    $values = @($raw.Split(',') | ForEach-Object {
+        [long]$parsed = 0
+        if (-not [long]::TryParse($_, [ref]$parsed) -or $parsed -lt 0) {
+            throw "Invalid process I/O counter in $key."
+        }
+        $parsed
+    })
+    if ($values.Count -ne 10) {
+        throw "Expected ten process I/O diagnostic windows in $key."
+    }
+    if ($processIoAvailable -eq "false" -and
+        ($values | Where-Object { $_ -ne 0 }).Count -gt 0) {
+        throw "Unavailable process I/O counters must not imply measured data."
+    }
+    $hostIoTotals[$field] = ($values | Measure-Object -Sum).Sum
+}
+if ($processIoAvailable -eq "true" -and
+    ($hostIoTotals["write_ops"] -le 0 -or $hostIoTotals["write_bytes"] -le 0)) {
+    throw "The SQLite 10k guarded write phase reported no process write I/O."
+}
+Write-Host ("100k strict 10k COMMIT Windows I/O windows: available={0}; write operations={1}; written bytes={2:N0} (whole process, not storage latency)" -f
+    $processIoAvailable, $hostIoTotals["write_ops"], $hostIoTotals["write_bytes"])
 # Sparse >32ms COMMIT ordinals make the interval between stalls
 # observable without adding any SQL/checkpoints, disk I/O, or logging to
 # the 10k production-write hot loop. Ordinals are 1-based and bounded.
