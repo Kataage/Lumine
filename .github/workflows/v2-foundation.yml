@@ -59,6 +59,85 @@ jobs:
             exit 1
           fi
 
+  # Opt-in product-owner preview independent of the unchanged release gate.
+  # Its artifact is explicitly NOT release qualified. Useful when #714
+  # makes strict Windows Core RED but issue #635 real-device UX needs review.
+  windows-ux-owner-preview:
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[UX-preview]')
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      LUMINE_REVISION: ${{ github.sha }}
+      LUMINE_HARDWARE_ID: github-ux-preview-not-release-qualified
+    steps:
+      - name: Checkout exact PR code
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.401
+      - name: Restore
+        run: dotnet restore Lumine.sln
+      - name: Publish NativeAOT
+        run: dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot
+      - name: Check genuine portable product boot and cleanup
+        shell: pwsh
+        run: |
+          $dir = Join-Path $PWD "artifacts/native-aot"
+          $exe = Join-Path $dir "Lumine.App.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing NativeAOT executable." }
+          Set-Content -LiteralPath (Join-Path $dir "revision.txt") -Value $env:GITHUB_SHA -NoNewline -Encoding ascii
+          New-Item -ItemType File -Force -Path (Join-Path $dir "portable.flag") | Out-Null
+          $library = Join-Path $env:RUNNER_TEMP "lumine-ux-preview-library"
+          New-Item -ItemType Directory -Force -Path $library | Out-Null
+          try {
+            & $exe --product-smoke "--library-dir=$library"
+            if ($LASTEXITCODE -ne 0) { throw "NativeAOT portable product smoke failed: $LASTEXITCODE" }
+            $data = Join-Path $dir "data"
+            $db = Join-Path $data "library.db"
+            if (-not (Test-Path -LiteralPath $db -PathType Leaf)) { throw "Portable data/library.db missing." }
+            if (Test-Path -LiteralPath (Join-Path $data "runtime.unclean")) { throw "Portable unclean marker retained." }
+            if ((Test-Path -LiteralPath "$db-wal") -and ((Get-Item -LiteralPath "$db-wal").Length -ne 0)) {
+              throw "Portable WAL was not clean at process exit."
+            }
+          }
+          finally {
+            $data = Join-Path $dir "data"
+            if (Test-Path -LiteralPath $data) { Remove-Item -LiteralPath $data -Recurse -Force }
+          }
+      - name: Verify owner review wrappers parse on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach ($path in @(
+            "./build/Run-ProductAcceptance.ps1",
+            "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Run-ViewerScrollOwnerReview.ps1",
+            "./build/ViewerScrollReviewChecks.ps1",
+            "./build/OwnerReviewDecisions.ps1"
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $path).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if (@($errors).Count -gt 0) { throw "Invalid Windows PS5.1 review script: $path" }
+          }
+      - name: Upload owner review candidate (not release-qualified)
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-ux-owner-PREVIEW-NOT-RELEASE-${{ github.run_id }}
+          path: |
+            artifacts/native-aot/**
+            build/Run-ProductAcceptance.ps1
+            build/Run-RealLibraryAcceptance.ps1
+            build/Run-ViewerScrollOwnerReview.ps1
+            build/ViewerScrollReviewChecks.ps1
+            build/OwnerReviewDecisions.ps1
+            docs/viewer-scroll-owner-review.md
+            docs/product-acceptance.md
+            docs/core-acceptance.md
+            docs/product-settings-portable.md
+          if-no-files-found: error
+
   windows-core:
     runs-on: windows-latest
     timeout-minutes: 30
