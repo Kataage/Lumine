@@ -249,8 +249,17 @@ function Write-ManualChecklist {
             "- [$marker] $($check.title): $($check.prompt) (status: $($check.status))")
     }
 
+    if ($IncludeViewerScrollReview) {
+        $lines.Add("")
+        $lines.Add("## Issue #634 — same-session physical Grid/List wheel observations")
+        $lines.Add("A physical GPU name is diagnostic context, NOT proof of frame-present quality.")
+        foreach ($check in $viewerScrollChecks) {
+            $marker = if ($check.status -eq "pass") { "x" } else { " " }
+            $lines.Add("- [$marker] $($check.title): $($check.instruction) (status: $($check.status))")
+        }
+    }
     $lines.Add("")
-    $lines.Add("If any item fails, keep #443 / #410 / #397 open as applicable and record a focused follow-up issue before AI work starts.")
+    $lines.Add("If any item fails, keep #634 / #635 and dependent product issues open; do not infer physical acceptance from CI.")
 
     $lines |
         Set-Content -LiteralPath $manualChecklistPath -Encoding UTF8
