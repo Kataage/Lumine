@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Lumine.Diagnostics;
+using Lumine.Library.Benchmarks;
 using Lumine.Library;
 using Microsoft.Data.Sqlite;
 
@@ -111,6 +112,12 @@ long[] metadataHostWindowGcPauseTicks = new long[10];
 int[] metadataHostWindowGen2Collections = new int[10];
 long[] metadataHostWindowUtcUnixMs = new long[10];
 var metadataHostCompletedWindows = 0;
+// Windows process I/O totals cover all threads/files, not only SQLite or
+// physical disk. Capture only at 1k boundaries, never inside a COMMIT.
+long[] metadataHostWindowReadOps = new long[10];
+long[] metadataHostWindowWriteOps = new long[10];
+long[] metadataHostWindowReadBytes = new long[10];
+long[] metadataHostWindowWriteBytes = new long[10];
 // Bounded 1-based ordinals retain precise sparse spikes without an
 // allocation/logging operation on each individual COMMIT hot path.
 int[] metadataCommitSlow32Ordinals = new int[256];
@@ -279,6 +286,8 @@ try
     var metadataHostPreviousCpuTicks = metadataHostProcess.TotalProcessorTime.Ticks;
     var metadataHostPreviousGcPauseTicks = GC.GetTotalPauseDuration().Ticks;
     var metadataHostPreviousGen2 = GC.CollectionCount(2);
+    var metadataHostProcessIoAvailable =
+        WindowsProcessIo.TryCapture(metadataHostProcess, out var metadataHostPreviousIo);
     using (recorder.Measure(CoreMetricNames.LibraryTechnicalMetadataPersist))
     {
         AssetCursor? metadataCursor = null;
@@ -342,6 +351,26 @@ try
                     var cpuTicks = metadataHostProcess.TotalProcessorTime.Ticks;
                     var gcPauseTicks = GC.GetTotalPauseDuration().Ticks;
                     var gen2Collections = GC.CollectionCount(2);
+                    if (metadataHostProcessIoAvailable)
+                    {
+                        if (!WindowsProcessIo.TryCapture(
+                                metadataHostProcess, out var currentIo))
+                        {
+                            throw new InvalidOperationException(
+                                "Windows process I/O accounting became unavailable.");
+                        }
+
+                        metadataHostWindowReadOps[window] = WindowsProcessIo.Delta(
+                            currentIo.ReadOperations, metadataHostPreviousIo.ReadOperations);
+                        metadataHostWindowWriteOps[window] = WindowsProcessIo.Delta(
+                            currentIo.WriteOperations, metadataHostPreviousIo.WriteOperations);
+                        metadataHostWindowReadBytes[window] = WindowsProcessIo.Delta(
+                            currentIo.ReadBytes, metadataHostPreviousIo.ReadBytes);
+                        metadataHostWindowWriteBytes[window] = WindowsProcessIo.Delta(
+                            currentIo.WriteBytes, metadataHostPreviousIo.WriteBytes);
+                        metadataHostPreviousIo = currentIo;
+                    }
+
                     metadataHostWindowWallTicks[window] =
                         Stopwatch.GetElapsedTime(metadataHostWindowStarted, completedAt).Ticks;
                     metadataHostWindowCpuTicks[window] =
@@ -863,6 +892,11 @@ try
             ["technical_metadata_commit_bucket_ge_128ms"] = metadataCommitLatencyBuckets[4].ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_commit_window_1000_ticks_csv"] = string.Join(",", metadataCommitWindowTicks.Select(static ticks => ticks.ToString(CultureInfo.InvariantCulture))),
             ["technical_metadata_host_window_1000_completed"] = metadataHostCompletedWindows.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_host_process_io_available"] = metadataHostProcessIoAvailable ? "true" : "false",
+            ["technical_metadata_host_window_1000_read_ops_csv"] = string.Join(",", metadataHostWindowReadOps.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_write_ops_csv"] = string.Join(",", metadataHostWindowWriteOps.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_read_bytes_csv"] = string.Join(",", metadataHostWindowReadBytes.Take(metadataHostCompletedWindows)),
+            ["technical_metadata_host_window_1000_write_bytes_csv"] = string.Join(",", metadataHostWindowWriteBytes.Take(metadataHostCompletedWindows)),
             ["technical_metadata_host_window_1000_wall_ticks_csv"] = string.Join(",", metadataHostWindowWallTicks.Take(metadataHostCompletedWindows)),
             ["technical_metadata_host_window_1000_process_cpu_ticks_csv"] = string.Join(",", metadataHostWindowCpuTicks.Take(metadataHostCompletedWindows)),
             ["technical_metadata_host_window_1000_gc_pause_ticks_csv"] = string.Join(",", metadataHostWindowGcPauseTicks.Take(metadataHostCompletedWindows)),
@@ -923,6 +957,13 @@ try
         $"gc_pause_ms=[{string.Join(",", metadataHostWindowGcPauseTicks.Take(metadataHostCompletedWindows).Select(static ticks => (ticks / (double)TimeSpan.TicksPerMillisecond).ToString("F1", CultureInfo.InvariantCulture)))}]; " +
         $"gen2_collections=[{string.Join(",", metadataHostWindowGen2Collections.Take(metadataHostCompletedWindows))}]. " +
         "CPU includes all process threads, and low CPU with long COMMIT is not proof of disk I/O.");
+    Console.WriteLine(
+        $"Individual SQLite COMMIT 1k Windows process I/O (all files and threads, not disk service time): " +
+        $"available={metadataHostProcessIoAvailable}; " +
+        $"read_ops=[{string.Join(",", metadataHostWindowReadOps.Take(metadataHostCompletedWindows))}]; " +
+        $"write_ops=[{string.Join(",", metadataHostWindowWriteOps.Take(metadataHostCompletedWindows))}]; " +
+        $"read_bytes=[{string.Join(",", metadataHostWindowReadBytes.Take(metadataHostCompletedWindows))}]; " +
+        $"write_bytes=[{string.Join(",", metadataHostWindowWriteBytes.Take(metadataHostCompletedWindows))}].");
     Console.WriteLine(
         $"Individual SQLite COMMIT >=32ms ordinal positions (1-based, first 256): " +
         $"{string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored))}; " +
