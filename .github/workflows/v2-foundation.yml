@@ -91,8 +91,15 @@ jobs:
           $library = Join-Path $env:RUNNER_TEMP "lumine-ux-preview-library"
           New-Item -ItemType Directory -Force -Path $library | Out-Null
           try {
-            & $exe --product-smoke "--library-dir=$library"
-            if ($LASTEXITCODE -ne 0) { throw "NativeAOT portable product smoke failed: $LASTEXITCODE" }
+            # A Windows GUI-subsystem executable does not reliably assign
+            # PowerShell's LASTEXITCODE through &, and can be returned before
+            # termination. Observe a real process handle and wait for exit.
+            $process = Start-Process -FilePath $exe -ArgumentList @(
+              "--product-smoke", "--library-dir=$library"
+            ) -Wait -PassThru
+            if ($null -eq $process -or $process.ExitCode -ne 0) {
+              throw "NativeAOT portable product smoke process failed: $($process.ExitCode)"
+            }
             $data = Join-Path $dir "data"
             $db = Join-Path $data "library.db"
             if (-not (Test-Path -LiteralPath $db -PathType Leaf)) { throw "Portable data/library.db missing." }
