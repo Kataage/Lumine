@@ -608,7 +608,28 @@ jobs:
               -not (Test-Path (Join-Path $output "VIEWER-SCROLL-CHECKLIST.md"))) {
             throw "Prepare-only review incorrectly claimed or omitted human acceptance."
           }
-          Write-Host "Reviewer wrapper syntax and strictly pending preflight evidence: PASS."
+          # Both independent and consolidated human review modes must use
+          # exactly the same five unanswered scroll checks. Validate on
+          # native Windows PowerShell 5.1 without launching a real window.
+          foreach ($candidate in @("./build/Run-ProductAcceptance.ps1", "./build/ViewerScrollReviewChecks.ps1")) {
+            $candidateTokens = $null
+            $candidateErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $candidate).Path,
+              [ref]$candidateTokens, [ref]$candidateErrors) | Out-Null
+            if (@($candidateErrors).Count -gt 0) {
+              throw "Consolidated owner review PowerShell 5.1 syntax invalid: $candidate"
+            }
+          }
+          . ./build/ViewerScrollReviewChecks.ps1
+          $sharedChecks = @(New-ViewerScrollReviewChecks)
+          $expectedIds = @("gridSmallForward", "gridBurstReverse", "listSmallForward", "listBurstReverse", "jumpRecovery")
+          if (@($sharedChecks).Count -ne 5 -or
+              @($sharedChecks | Where-Object { $_.status -ne "pending" }).Count -ne 0 -or
+              (@($sharedChecks | ForEach-Object { $_.id }) -join ",") -ne ($expectedIds -join ",")) {
+            throw "Consolidated viewer review checklist did not preserve five pending canonical checks."
+          }
+          Write-Host "Reviewer standalone and consolidated syntax, five pending scroll questions: PASS."
 
       - name: Run NativeAOT product runtime lifecycle smoke
         shell: pwsh
@@ -742,6 +763,7 @@ jobs:
             build/Run-ProductAcceptance.ps1
             build/Run-RealLibraryAcceptance.ps1
             build/Run-ViewerScrollOwnerReview.ps1
+            build/ViewerScrollReviewChecks.ps1
             docs/viewer-scroll-owner-review.md
             docs/product-acceptance.md
             docs/core-acceptance.md
