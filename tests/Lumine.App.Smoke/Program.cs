@@ -4727,7 +4727,11 @@ try
                     .OfType<Border>()
                     .Any(border =>
                         border.Classes.Contains("lumine-inspector-surface")
-                        && border.BorderThickness == new Thickness(1))
+                        // A real right-edge drawer has only a left divider,
+                        // not the former four-sided inset card border.
+                        && border.BorderThickness == new Thickness(1, 0, 0, 0)
+                        && border.Margin == new Thickness(0)
+                        && border.CornerRadius == new CornerRadius(0))
                 && shell.GetVisualDescendants()
                     .OfType<Border>()
                     .Any(border =>
