@@ -72,6 +72,58 @@ After Lumine closes, the wrapper asks the final human-observation questions and 
 - `warm.json`
 - optional `warm-steady.json`
 
+## One final physical Windows session for both #635 and #634 (2026-10-20)
+
+Do not ask the owner to run separate repeated intermediate acceptance sessions.
+When the *final implementation candidate* is ready, use the **same** shipped
+NativeAOT executable and representative mixed JPEG/PNG/WebP/BMP image library
+for the product-wide and scroll-specific review **in one application launch**:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\build\Run-ProductAcceptance.ps1 `
+  -Exe ".\artifacts\native-aot\Lumine.App.exe" `
+  -Library "D:\path\to\representative-library" `
+  -OutputDirectory "D:\Lumine-final-review" `
+  -InteractiveReview -IncludeViewerScrollReview
+```
+
+Use the **successfully built and merged `develop` product acceptance ZIP** with
+the scripts in its `build/` folder, and execute from that ZIP's extracted
+repository-relative directory. The representative source library is read-only
+in the automated acceptance scenario; product mutations use its separate
+scratch root. Its automatic Windows Core gate must complete before the human
+session starts. The explicit `-IncludeViewerScrollReview` switch requires
+`-InteractiveReview` and `MemoryOnly` thumbnail storage; normal usage of
+`Run-ProductAcceptance.ps1` is unchanged.
+
+During the *same launched app*, review the ten original UX and navigation
+criteria plus five physical Grid/List wheel tests (ordinary wheel, continuous
+forward/reverse, List fourth wheel boundary, far jump and recovery). Close
+the app once and answer the 10 product questions and 5 scroll questions.
+The five questions are shared with `Run-ViewerScrollOwnerReview.ps1`, not
+maintained as an independent inconsistent second checklist.
+
+The following evidence is produced together without private image pixels
+or library path strings:
+
+- `product-summary.json` — original automated result and 10-item product
+  review, plus `consolidatedViewerScrollReview`,
+  `viewerScrollManualDecision` and `viewerScrollChecks`.
+- `viewer-scroll-owner-report.json` — independent Issue #634 five-check
+  `pass/fail/pending` observations, hardware inventory only as context.
+- Original `summary.json`, `MANUAL-CHECKLIST.md`, `cold.json`,
+  `warm.json` and other ordinary acceptance evidence.
+
+If any wheel check **fails**, the consolidated result is `fail`; if any
+wheel check is **skipped**, or the environment forces the software renderer,
+it cannot report `pass`. The product-specific
+`manualDecision` remains the original 10-item human evaluation; the combined
+result additionally gates on the separate wheel verdict. This is **human
+self-report**, not an actual GPU present-fence timing measurement. Only the
+product owner can approve #634 and #635 after reviewing these outputs.
+Their approval does not silently resolve Issue #714 or other open release
+blockers. Do not close those issues on CI or screenshot output alone.
+
 ## Manual checks that cannot be decided by automation
 
 The final reviewer must confirm all of these:
