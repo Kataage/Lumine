@@ -25,11 +25,22 @@ param(
 
     [switch]$UseExistingAutomatedResults,
 
-    [switch]$InteractiveReview
+    [switch]$InteractiveReview,
+
+    # Issue #635 final one-session handoff: five independent Issue #634
+    # physical wheel checks inside the same already-open product review.
+    [switch]$IncludeViewerScrollReview
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+if ($IncludeViewerScrollReview -and -not $InteractiveReview) {
+    throw "The consolidated physical scroll review requires -InteractiveReview."
+}
+if ($IncludeViewerScrollReview -and $ThumbnailStorageMode -ne "MemoryOnly") {
+    throw "Issue #634 final scroll review requires MemoryOnly thumbnail storage."
+}
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw "Lumine product acceptance requires Windows."
@@ -119,6 +130,25 @@ $productGateNames = @(
 foreach ($gateName in $productGateNames) {
     if ([string]$coreSummary.productAutomated.$gateName -ne "pass") {
         throw "Product automated gate '$gateName' did not report pass."
+    }
+}
+
+$viewerScrollChecks = @()
+$viewerScrollReportPath = Join-Path $outputRoot "viewer-scroll-owner-report.json"
+if ($IncludeViewerScrollReview) {
+    $sharedChecksPath = Join-Path $PSScriptRoot "ViewerScrollReviewChecks.ps1"
+    if (-not (Test-Path -LiteralPath $sharedChecksPath -PathType Leaf)) {
+        throw "Missing shared physical scroll checklist: $sharedChecksPath"
+    }
+    . $sharedChecksPath
+    $viewerScrollChecks = @(New-ViewerScrollReviewChecks)
+    if ($viewerScrollChecks.Count -ne 5 -or
+        @($viewerScrollChecks | Where-Object { $_.status -ne "pending" }).Count -ne 0) {
+        throw "Consolidated Viewer scroll checklist was incomplete or already answered."
+    }
+    # Never let an earlier review report be mistaken for current approval.
+    if (Test-Path -LiteralPath $viewerScrollReportPath) {
+        Remove-Item -LiteralPath $viewerScrollReportPath -Force
     }
 }
 
@@ -220,6 +250,18 @@ function Write-ManualChecklist {
         Set-Content -LiteralPath $manualChecklistPath -Encoding UTF8
 }
 
+function Ask-ScrollPassFailSkip {
+    param([Parameter(Mandatory = $true)][string]$Prompt)
+
+    while ($true) {
+        $answer = (Read-Host "$Prompt [y/n/s=skip]").Trim().ToLowerInvariant()
+        if ($answer -in @("y", "yes")) { return "pass" }
+        if ($answer -in @("n", "no")) { return "fail" }
+        if ($answer -in @("s", "skip", "")) { return "pending" }
+        Write-Host "Choose y, n or s."
+    }
+}
+
 function Ask-PassFail {
     param(
         [Parameter(Mandatory = $true)]
@@ -248,6 +290,13 @@ if ($InteractiveReview) {
     Write-Host "The automated NativeAOT gate passed."
     Write-Host "Lumine will now open normally using the acceptance data root."
     Write-Host "Select the representative library already registered in the Library navigation, exercise the checklist, then close Lumine."
+    if ($IncludeViewerScrollReview) {
+        Write-Host "This one app session also covers all five physical Grid/List scroll checks for Issue #634:"
+        foreach ($check in $viewerScrollChecks) {
+            Write-Host " - $($check.title): $($check.instruction)"
+        }
+        Write-Host "Use the actual Windows display/GPU and representative mixed-format images."
+    }
 
     $startInfo =
         New-Object System.Diagnostics.ProcessStartInfo
@@ -285,6 +334,12 @@ if ($InteractiveReview) {
         $check.status =
             Ask-PassFail -Prompt $check.prompt
     }
+    if ($IncludeViewerScrollReview) {
+        Write-Host "Record the five Issue #634 physical scroll observations from the SAME app session:"
+        foreach ($check in $viewerScrollChecks) {
+            $check.status = Ask-ScrollPassFailSkip -Prompt $check.title
+        }
+    }
 }
 
 $failedManualChecks =
@@ -302,6 +357,19 @@ elseif ($pendingManualChecks.Count -gt 0) {
     $manualDecision = "pending"
 }
 
+$viewerScrollManualDecision = "not-requested"
+$softwareRenderingOverride = [string]::Equals(
+    [Environment]::GetEnvironmentVariable("LUMINE_WIN32_RENDERING_MODE"),
+    "Software", [StringComparison]::OrdinalIgnoreCase)
+if ($IncludeViewerScrollReview) {
+    $viewerFailed = @($viewerScrollChecks | Where-Object { $_.status -eq "fail" }).Count
+    $viewerPending = @($viewerScrollChecks | Where-Object { $_.status -eq "pending" }).Count
+    if ($viewerFailed -gt 0) { $viewerScrollManualDecision = "fail" }
+    elseif ($viewerPending -gt 0) { $viewerScrollManualDecision = "pending" }
+    elseif ($softwareRenderingOverride) { $viewerScrollManualDecision = "not-qualified-software-renderer" }
+    else { $viewerScrollManualDecision = "owner-reported-pass" }
+}
+
 $combinedDecision =
     "automated-pass-manual-review-required"
 if ($manualDecision -eq "pass") {
@@ -310,13 +378,25 @@ if ($manualDecision -eq "pass") {
 elseif ($manualDecision -eq "fail") {
     $combinedDecision = "fail"
 }
+if ($IncludeViewerScrollReview) {
+    if ($viewerScrollManualDecision -eq "fail") {
+        $combinedDecision = "fail"
+    }
+    elseif ($viewerScrollManualDecision -ne "owner-reported-pass" -and
+            $combinedDecision -eq "pass") {
+        $combinedDecision = "automated-pass-manual-review-required"
+    }
+}
 
 $coreSummarySha256 =
     ((Get-FileHash -LiteralPath $coreSummaryPath -Algorithm SHA256).Hash).ToLowerInvariant()
 
 $unresolvedP0P1 = $null
-if ($manualDecision -eq "pass") {
+if ($combinedDecision -eq "pass") {
     $unresolvedP0P1 = $false
+}
+elseif ($combinedDecision -eq "fail") {
+    $unresolvedP0P1 = $true
 }
 
 $productSummary = [ordered]@{
@@ -338,6 +418,9 @@ $productSummary = [ordered]@{
     manualDecision = $manualDecision
     combinedDecision = $combinedDecision
     manualChecks = $manualChecks
+    consolidatedViewerScrollReview = [bool]$IncludeViewerScrollReview
+    viewerScrollManualDecision = $viewerScrollManualDecision
+    viewerScrollChecks = $viewerScrollChecks
     unresolvedP0P1 =
         $unresolvedP0P1
     sourcePolicy = [ordered]@{
@@ -354,14 +437,53 @@ $productSummary |
     Set-Content -LiteralPath $productSummaryPath -Encoding UTF8
 
 Write-ManualChecklist -Checks $manualChecks
+if ($IncludeViewerScrollReview) {
+    # Independent Issue #634 schema and decision. The GPU inventory is
+    # informational, never proof of physical frame-present timing.
+    $gpuNames = @()
+    try {
+        $gpuNames = @(Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) } |
+            ForEach-Object { [string]$_.Name } | Sort-Object -Unique)
+    }
+    catch {
+        Write-Warning "GPU inventory unavailable; human review status is unchanged."
+    }
+    $viewerReport = [ordered]@{
+        schemaVersion = 1
+        issue = 634
+        evidenceClass = "human-self-report-not-gpu-present-timing"
+        generatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+        appRevision = $coreSummary.appRevision
+        preparationOnly = $false
+        osVersion = [Environment]::OSVersion.VersionString
+        videoControllerNames = @($gpuNames)
+        softwareRendererOverride = $softwareRenderingOverride
+        thumbnailStorageMode = $ThumbnailStorageMode
+        appExitCode = 0
+        manualDecision = $viewerScrollManualDecision
+        checks = $viewerScrollChecks
+        notes = @(
+            "Shared one-session Issue #635 product review; no second application launch.",
+            "No physical GPU frame-present latency is measured.",
+            "No private library paths, filenames, or image pixels are recorded."
+        )
+    }
+    $viewerReport | ConvertTo-Json -Depth 8 |
+        Set-Content -LiteralPath $viewerScrollReportPath -Encoding UTF8
+}
 
 Write-Host ""
 Write-Host "Product automated acceptance: PASS"
 Write-Host "Manual review            : $manualDecision"
+if ($IncludeViewerScrollReview) {
+    Write-Host "Viewer physical review  : $viewerScrollManualDecision"
+    Write-Host "Viewer review report    : $viewerScrollReportPath"
+}
 Write-Host "Combined decision        : $combinedDecision"
 Write-Host "Product summary          : $productSummaryPath"
 Write-Host "Manual checklist         : $manualChecklistPath"
 
-if ($manualDecision -eq "fail") {
-    throw "Manual Lumine product acceptance reported one or more failures. Keep #397 open."
+if ($combinedDecision -eq "fail") {
+    throw "Consolidated Lumine product or scroll review reported a failure. Keep #635/#634 open."
 }
