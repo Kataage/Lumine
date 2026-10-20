@@ -133,6 +133,12 @@ foreach ($gateName in $productGateNames) {
     }
 }
 
+$reviewDecisionPath = Join-Path $PSScriptRoot "OwnerReviewDecisions.ps1"
+if (-not (Test-Path -LiteralPath $reviewDecisionPath -PathType Leaf)) {
+    throw "Missing combined owner decision checks: $reviewDecisionPath"
+}
+. $reviewDecisionPath
+
 $viewerScrollChecks = @()
 $viewerScrollReportPath = Join-Path $outputRoot "viewer-scroll-owner-report.json"
 if ($IncludeViewerScrollReview) {
@@ -362,31 +368,14 @@ $softwareRenderingOverride = [string]::Equals(
     [Environment]::GetEnvironmentVariable("LUMINE_WIN32_RENDERING_MODE"),
     "Software", [StringComparison]::OrdinalIgnoreCase)
 if ($IncludeViewerScrollReview) {
-    $viewerFailed = @($viewerScrollChecks | Where-Object { $_.status -eq "fail" }).Count
-    $viewerPending = @($viewerScrollChecks | Where-Object { $_.status -eq "pending" }).Count
-    if ($viewerFailed -gt 0) { $viewerScrollManualDecision = "fail" }
-    elseif ($viewerPending -gt 0) { $viewerScrollManualDecision = "pending" }
-    elseif ($softwareRenderingOverride) { $viewerScrollManualDecision = "not-qualified-software-renderer" }
-    else { $viewerScrollManualDecision = "owner-reported-pass" }
+    $viewerScrollManualDecision = Get-ViewerScrollOwnerDecision `
+        -Checks $viewerScrollChecks `
+        -SoftwareRendererOverride $softwareRenderingOverride
 }
-
-$combinedDecision =
-    "automated-pass-manual-review-required"
-if ($manualDecision -eq "pass") {
-    $combinedDecision = "pass"
-}
-elseif ($manualDecision -eq "fail") {
-    $combinedDecision = "fail"
-}
-if ($IncludeViewerScrollReview) {
-    if ($viewerScrollManualDecision -eq "fail") {
-        $combinedDecision = "fail"
-    }
-    elseif ($viewerScrollManualDecision -ne "owner-reported-pass" -and
-            $combinedDecision -eq "pass") {
-        $combinedDecision = "automated-pass-manual-review-required"
-    }
-}
+$combinedDecision = Get-CombinedOwnerReviewDecision `
+    -ProductManualDecision $manualDecision `
+    -IncludeViewerScrollReview ([bool]$IncludeViewerScrollReview) `
+    -ViewerScrollManualDecision $viewerScrollManualDecision
 
 $coreSummarySha256 =
     ((Get-FileHash -LiteralPath $coreSummaryPath -Algorithm SHA256).Hash).ToLowerInvariant()
