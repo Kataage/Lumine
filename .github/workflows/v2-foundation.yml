@@ -113,6 +113,21 @@ jobs:
                   $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction Stop
                   Write-Host ("Observed Win32_Process.CommandLine: {0}" -f $procInfo.CommandLine)
                 } catch { Write-Warning ("Could not get command line: {0}" -f $_.Exception.Message) }
+                # The argv are now independently verified. Classify
+                # exactly how far Program.Main progressed before timeout;
+                # this log already exists in production AppHost. No new
+                # production instrumentation or relaxed health gate.
+                $probeData = Join-Path $dir "data"
+                $probeLog = Join-Path $probeData "logs/runtime.log"
+                Write-Host ("Portable data created: {0}; marker: {1}; db: {2}; runtime log: {3}" -f
+                  (Test-Path -LiteralPath $probeData),
+                  (Test-Path -LiteralPath (Join-Path $probeData "runtime.unclean")),
+                  (Test-Path -LiteralPath (Join-Path $probeData "library.db")),
+                  (Test-Path -LiteralPath $probeLog))
+                if (Test-Path -LiteralPath $probeLog -PathType Leaf) {
+                  Write-Host "=== NativeAOT existing runtime.log tail ==="
+                  Get-Content -LiteralPath $probeLog -Tail 70 -ErrorAction Continue | ForEach-Object { Write-Host $_ }
+                }
                 $process.Kill($true)
                 [void]$process.WaitForExit(5000)
                 throw "NativeAOT portable product smoke did not exit within 60 seconds."
