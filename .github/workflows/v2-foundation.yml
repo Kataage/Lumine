@@ -611,7 +611,7 @@ jobs:
           # Both independent and consolidated human review modes must use
           # exactly the same five unanswered scroll checks. Validate on
           # native Windows PowerShell 5.1 without launching a real window.
-          foreach ($candidate in @("./build/Run-ProductAcceptance.ps1", "./build/ViewerScrollReviewChecks.ps1")) {
+          foreach ($candidate in @("./build/Run-ProductAcceptance.ps1", "./build/ViewerScrollReviewChecks.ps1", "./build/OwnerReviewDecisions.ps1")) {
             $candidateTokens = $null
             $candidateErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -629,7 +629,41 @@ jobs:
               (@($sharedChecks | ForEach-Object { $_.id }) -join ",") -ne ($expectedIds -join ",")) {
             throw "Consolidated viewer review checklist did not preserve five pending canonical checks."
           }
-          Write-Host "Reviewer standalone and consolidated syntax, five pending scroll questions: PASS."
+          . ./build/OwnerReviewDecisions.ps1
+          if ((Get-ViewerScrollOwnerDecision -Checks $sharedChecks) -ne "pending") {
+            throw "Unanswered scroll review must remain pending."
+          }
+          foreach ($check in $sharedChecks) { $check.status = "pass" }
+          if ((Get-ViewerScrollOwnerDecision -Checks $sharedChecks) -ne "owner-reported-pass" -or
+              (Get-ViewerScrollOwnerDecision -Checks $sharedChecks -SoftwareRendererOverride $true) -ne "not-qualified-software-renderer") {
+            throw "All-pass scroll review / forced software-renderer qualification is wrong."
+          }
+          $sharedChecks[3].status = "fail"
+          if ((Get-ViewerScrollOwnerDecision -Checks $sharedChecks) -ne "fail") {
+            throw "A single failed List wheel review must fail."
+          }
+          $sharedChecks[3].status = "pending"
+          if ((Get-ViewerScrollOwnerDecision -Checks $sharedChecks) -ne "pending") {
+            throw "Skipping one physical wheel check must not yield pass."
+          }
+          $verdictCases = @(
+            @{ product="pass"; viewer="owner-reported-pass"; expected="pass" },
+            @{ product="pass"; viewer="pending"; expected="automated-pass-manual-review-required" },
+            @{ product="pass"; viewer="not-qualified-software-renderer"; expected="automated-pass-manual-review-required" },
+            @{ product="pass"; viewer="fail"; expected="fail" },
+            @{ product="fail"; viewer="owner-reported-pass"; expected="fail" },
+            @{ product="pending"; viewer="owner-reported-pass"; expected="automated-pass-manual-review-required" }
+          )
+          foreach ($case in $verdictCases) {
+            $actual = Get-CombinedOwnerReviewDecision -ProductManualDecision $case.product -IncludeViewerScrollReview $true -ViewerScrollManualDecision $case.viewer
+            if ($actual -ne $case.expected) {
+              throw "Combined physical owner verdict was $actual; expected $($case.expected)."
+            }
+          }
+          if ((Get-CombinedOwnerReviewDecision -ProductManualDecision "pass") -ne "pass") {
+            throw "Legacy product-only review changed."
+          }
+          Write-Host "Reviewer wrapper PowerShell 5.1, canonical checks and fail-closed combined verdict cases: PASS."
 
       - name: Run NativeAOT product runtime lifecycle smoke
         shell: pwsh
@@ -764,6 +798,7 @@ jobs:
             build/Run-RealLibraryAcceptance.ps1
             build/Run-ViewerScrollOwnerReview.ps1
             build/ViewerScrollReviewChecks.ps1
+            build/OwnerReviewDecisions.ps1
             docs/viewer-scroll-owner-review.md
             docs/product-acceptance.md
             docs/core-acceptance.md
