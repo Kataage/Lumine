@@ -251,7 +251,7 @@ function Write-ManualChecklist {
 
     if ($IncludeViewerScrollReview) {
         $lines.Add("")
-        $lines.Add("## Issue #634 — same-session physical Grid/List wheel observations")
+        $lines.Add("## Issue #634 - same-session physical Grid/List wheel observations")
         $lines.Add("A physical GPU name is diagnostic context, NOT proof of frame-present quality.")
         foreach ($check in $viewerScrollChecks) {
             $marker = if ($check.status -eq "pass") { "x" } else { " " }
