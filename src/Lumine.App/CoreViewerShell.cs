@@ -508,6 +508,20 @@ internal sealed class CoreViewerShell : UserControl
     internal Rect ContextSurfaceBounds =>
         _contextSurface.Bounds;
 
+    internal bool InspectorEdgeDrawerForSmoke =>
+        _contextSurface.Margin == new Thickness(0)
+        && _contextSurface.CornerRadius == new CornerRadius(0)
+        && _contextSurface.BorderThickness == new Thickness(1, 0, 0, 0)
+        && _contextSurface.HorizontalAlignment == HorizontalAlignment.Right
+        && _contextSurface.VerticalAlignment == VerticalAlignment.Stretch;
+
+    internal bool InspectorSlideInConfiguredForSmoke =>
+        _contextSurface.Transitions?.OfType<TransformOperationsTransition>()
+            .Any(transition =>
+                transition.Property == Border.RenderTransformProperty
+                && transition.Duration == TimeSpan.FromMilliseconds(200))
+        == true;
+
     internal Rect GridViewerBounds =>
         _grid.Bounds;
 
