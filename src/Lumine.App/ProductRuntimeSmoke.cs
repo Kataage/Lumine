@@ -69,6 +69,10 @@ internal static class ProductRuntimeSmoke
                 host.Log.Write(
                     "product-smoke",
                     $"Iteration {iteration + 1}/2: Core Viewer opened.");
+                runtime.ShutdownProgress =
+                    stage => host.Log.Write(
+                        "product-smoke",
+                        $"Filesystem sync shutdown: {stage}");
 
                 if (runtime.AssetCount < 0)
                 {
