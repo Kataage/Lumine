@@ -48,7 +48,7 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
     // Optional observability for the actual NativeAOT product lifecycle.
     // Normal production callers leave it null; no extra background work.
-    internal Action<string>? ShutdownProgress { get; set; }
+    public Action<string>? ShutdownProgress { get; set; }
 
     public Task<LibraryReconcileResult> ReconcileNowAsync(
         CancellationToken cancellationToken = default,
