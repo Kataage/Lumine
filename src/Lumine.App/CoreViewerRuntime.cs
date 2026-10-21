@@ -78,6 +78,13 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
 
     public ThumbnailCache ThumbnailCache { get; }
 
+    // Product-smoke-only shutdown boundary callback. The actual sync
+    // session reports its native watcher, processor and checkpoint phases.
+    internal Action<string>? ShutdownProgress
+    {
+        set => _syncSession.ShutdownProgress = value;
+    }
+
     internal ThumbnailDiagnosticsSnapshot ThumbnailPipelineDiagnostics =>
         _thumbnailPipeline.Diagnostics;
 
