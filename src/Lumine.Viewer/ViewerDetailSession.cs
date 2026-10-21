@@ -536,10 +536,38 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 CancelSourceNoThrow(selectionLifetime);
             }
 
-            // Begin cache shutdown on the UI thread so resident Avalonia
-            // bitmaps are released on the same thread as the visual owner.
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
-                () => PreviewBitmapCache.Dispose());
+            // A real Avalonia desktop owns bitmap destruction on its UI
+            // dispatcher. The NativeAOT --product-smoke path deliberately
+            // does not start any Avalonia Application or dispatcher loop:
+            // InvokeAsync would enqueue a callback that can never run and
+            // hang even an empty ViewerDetailSession during shutdown.
+            //
+            // Only allow direct disposal without an Application when there
+            // are provably no decoded bitmap owners, original loads or
+            // outstanding selection operations. If that contract is broken,
+            // fail explicitly rather than leaking/disposing live bitmaps
+            // on an arbitrary thread or hanging forever.
+            if (Avalonia.Application.Current is null)
+            {
+                var cache = PreviewBitmapCache.Diagnostics;
+                if (cache.EntryCount != 0
+                    || cache.ActiveDecodes != 0
+                    || originalLoad is not null
+                    || !selectionOperationDrain.IsCompleted)
+                {
+                    throw new InvalidOperationException(
+                        "Active detail bitmaps require a running Avalonia UI dispatcher for cleanup.");
+                }
+
+                PreviewBitmapCache.Dispose();
+            }
+            else
+            {
+                // Resident Avalonia bitmaps retain their original UI-thread
+                // disposal contract for all interactive/visible sessions.
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                    () => PreviewBitmapCache.Dispose());
+            }
 
             if (originalLoad is not null)
             {
