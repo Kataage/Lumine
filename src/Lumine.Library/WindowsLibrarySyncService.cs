@@ -46,6 +46,10 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
     public Task Completion => _watcherMonitor;
 
+    // Optional observability for the actual NativeAOT product lifecycle.
+    // Normal production callers leave it null; no extra background work.
+    internal Action<string>? ShutdownProgress { get; set; }
+
     public Task<LibraryReconcileResult> ReconcileNowAsync(
         CancellationToken cancellationToken = default,
         IProgress<LibraryScanProgress>? progress = null) =>
@@ -69,12 +73,16 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
             // Capture a conservative journal boundary while the watcher is still
             // active. Events after this USN may also be applied before shutdown;
             // replaying them next start is idempotent and safer than skipping a gap.
+            ShutdownProgress?.Invoke("Querying final USN checkpoint");
             var checkpoint = WindowsUsnJournal.Query(_rootPath);
+            ShutdownProgress?.Invoke("Final USN checkpoint query completed");
             Exception? shutdownFailure = null;
 
             try
             {
+                ShutdownProgress?.Invoke("Stopping native directory watcher");
                 await _watcher.DisposeAsync().ConfigureAwait(false);
+                ShutdownProgress?.Invoke("Native directory watcher stopped");
             }
             catch (Exception exception)
             {
@@ -83,7 +91,9 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
             try
             {
+                ShutdownProgress?.Invoke("Stopping filesystem change processor");
                 await _processor.DisposeAsync().ConfigureAwait(false);
+                ShutdownProgress?.Invoke("Filesystem change processor stopped");
             }
             catch (Exception exception)
             {
@@ -92,7 +102,9 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
             try
             {
+                ShutdownProgress?.Invoke("Joining filesystem monitor");
                 await _watcherMonitor.ConfigureAwait(false);
+                ShutdownProgress?.Invoke("Filesystem monitor joined");
             }
             catch (Exception exception)
             {
@@ -102,6 +114,7 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
                 shutdownFailure ??= exception;
             }
 
+            ShutdownProgress?.Invoke("Persisting final sync state");
             var state = await _repository.GetOrCreateSyncStateAsync(
                 _libraryId).ConfigureAwait(false);
 
@@ -122,6 +135,7 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
                 throw shutdownFailure;
             }
 
+            ShutdownProgress?.Invoke("Filesystem sync session closed");
             _disposeCompletion.TrySetResult();
         }
         catch (Exception exception)
