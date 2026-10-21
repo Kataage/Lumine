@@ -182,22 +182,27 @@ public sealed class WindowsLibrarySyncService
     public async Task<WindowsLibrarySyncSession> StartAsync(
         long libraryId,
         CancellationToken cancellationToken = default,
-        IProgress<LibraryScanProgress>? progress = null)
+        IProgress<LibraryScanProgress>? progress = null,
+        Action<string>? reportBootstrapStage = null)
     {
+        reportBootstrapStage?.Invoke("Checking Windows platform");
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException(
                 "Incremental Windows filesystem synchronization is Windows-only.");
         }
 
+        reportBootstrapStage?.Invoke("Loading library registration");
         var library = await _repository.GetLibraryAsync(
             libraryId,
             cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"Library {libraryId} does not exist.");
 
+        reportBootstrapStage?.Invoke("Checking filesystem identity");
         WindowsFilesystemSemantics.RequireCaseInsensitiveDirectory(library.RootPath);
 
+        reportBootstrapStage?.Invoke("Loading sync checkpoint");
         var state = await _repository.GetOrCreateSyncStateAsync(
             libraryId,
             cancellationToken).ConfigureAwait(false);
@@ -216,10 +221,12 @@ public sealed class WindowsLibrarySyncService
             // Start watching first. Bootstrap work can take hundreds of
             // milliseconds; changes that occur during it are buffered and
             // replayed after the baseline is established.
+            reportBootstrapStage?.Invoke("Arming native directory watcher");
             await watcher.StartAsync(
                 router.Publish,
                 cancellationToken).ConfigureAwait(false);
 
+            reportBootstrapStage?.Invoke("Querying NTFS change journal");
             var journalAtStart = WindowsUsnJournal.Query(library.RootPath);
             UsnCatchUpResult? catchUp = null;
             LibrarySyncBootstrapMode bootstrapMode;
@@ -232,6 +239,7 @@ public sealed class WindowsLibrarySyncService
 
             if (canUseCheckpoint)
             {
+                reportBootstrapStage?.Invoke("Replaying NTFS journal changes");
                 catchUp = WindowsUsnJournal.ReadChanges(
                     library.RootPath,
                     state.UsnJournalId!,
@@ -258,6 +266,7 @@ public sealed class WindowsLibrarySyncService
             }
             else
             {
+                reportBootstrapStage?.Invoke("Reconciling library contents");
                 await RequireCompleteReconcileAsync(
                     libraryId,
                     progress,
@@ -268,6 +277,7 @@ public sealed class WindowsLibrarySyncService
                     : LibrarySyncBootstrapMode.ReconcileFallback;
             }
 
+            reportBootstrapStage?.Invoke("Persisting sync checkpoint");
             await _repository.UpdateUsnCheckpointAsync(
                 libraryId,
                 journalAtStart.Available ? journalAtStart.JournalId : null,
@@ -281,8 +291,10 @@ public sealed class WindowsLibrarySyncService
 
             // Preserve watcher ordering: buffered events are queued before the
             // router begins forwarding newly arriving events directly.
+            reportBootstrapStage?.Invoke("Starting buffered filesystem events");
             _ = router.Activate(processor);
 
+            reportBootstrapStage?.Invoke("Library sync ready");
             return new WindowsLibrarySyncSession(
                 libraryId,
                 _repository,
