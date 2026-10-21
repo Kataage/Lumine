@@ -112,7 +112,7 @@ internal static class ProductRuntimeSmoke
             // cannot reorder a useful last-stored stage breadcrumb.
             log.Write(
                 "product-smoke",
-                $"Core Viewer open stage: {value.Stage}.");
+                $"Core Viewer open stage: {value.Stage}; {value.Message}");
         }
     }
 
