@@ -51,6 +51,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyPrefetchStartsWhileViewportLoadsAsync(
                         thumbnailPath);
+                    await VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
+                        thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyBrowsePresentationParityAsync(thumbnailPath);
                     await VerifyThumbnailFailureRecoveryAsync(thumbnailPath);
@@ -1935,6 +1937,85 @@ internal static class Program
             && largeViewer.IsAssetWarmForSmoke(1_099)
             && largeViewer.FirstWarmAssetIndexForSmoke == 76,
             "Large decoded Bitmap capacity did not retain exactly the bounded warm descriptor horizon.");
+    }
+
+    private static async Task VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
+        string thumbnailPath)
+    {
+        // Reproduce the real #634 failure mode: the first background
+        // source in the next row never completes while its neighbors
+        // remain usable. Waiting for PrefetchAsync's whole near row,
+        // or decoding every tile sequentially, starves all neighbors.
+        var provider = new StalledFirstBackgroundThumbnailProvider(
+            thumbnailPath);
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(1_000),
+            provider,
+            new ViewerOptions
+            {
+                TileWidth = 120,
+                TileHeight = 120,
+                TileSpacing = 8,
+                PrefetchRows = 2,
+                PrefetchDelay = TimeSpan.FromMilliseconds(1),
+                DecodedBitmapEntryLimit = 64,
+                DecodedBitmapByteLimit = 32L * 1024 * 1024
+            });
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 900,
+            Height = 600,
+            Content = viewer
+        };
+        window.Show();
+        try
+        {
+            for (var attempt = 0;
+                 attempt < 1_500 && provider.BlockedAssetId == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            var stalledIndex = provider.BlockedAssetId - 1;
+            Require(
+                provider.BlockedAssetId > 0
+                && stalledIndex + 1 < viewer.AssetCount,
+                "Slow-near-source fixture never entered the next row.");
+
+            // The immediately following tile MUST become a resident
+            // decoded presentation while the first source stays held.
+            // This test fails for either the old all-near-source await
+            // or the old sequential per-tile bitmap warm loop.
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && !viewer.IsAssetWarmForSmoke(stalledIndex + 1);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                provider.BackgroundRequests > 1
+                && viewer.IsAssetWarmForSmoke(stalledIndex + 1)
+                && !viewer.IsAssetWarmForSmoke(stalledIndex)
+                && session.BitmapCache.Diagnostics.EntryCount
+                    <= session.Options.DecodedBitmapEntryLimit
+                && session.BitmapCache.Diagnostics.EstimatedBytes
+                    <= session.Options.DecodedBitmapByteLimit
+                && session.BitmapCache.Diagnostics.PeakConcurrentDecodes
+                    <= DecodedBitmapCache.DecodeConcurrencyLimit,
+                "A single delayed near source blocked other decoded next-row images, or the bounded bitmap budget was exceeded.");
+        }
+        finally
+        {
+            provider.Release();
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
     }
 
     private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
@@ -4234,6 +4315,46 @@ internal sealed class DirectFixtureAssetProvider(
                         : null,
                 Favorite:
                     organizationMetadata));
+    }
+}
+
+internal sealed class StalledFirstBackgroundThumbnailProvider(
+    string path) : IViewerThumbnailProvider
+{
+    private readonly TaskCompletionSource _release =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private long _blockedAssetId;
+    private int _backgroundRequests;
+
+    public long BlockedAssetId =>
+        Interlocked.Read(ref _blockedAssetId);
+
+    public int BackgroundRequests =>
+        Volatile.Read(ref _backgroundRequests);
+
+    public void Release() => _release.TrySetResult();
+
+    public async ValueTask<ViewerThumbnail> RequestAsync(
+        ViewerAsset asset,
+        ViewerThumbnailPriority priority,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (priority == ViewerThumbnailPriority.Background)
+        {
+            Interlocked.Increment(ref _backgroundRequests);
+            if (Interlocked.CompareExchange(
+                    ref _blockedAssetId, asset.Id, 0) == 0)
+            {
+                await _release.Task.WaitAsync(cancellationToken);
+            }
+        }
+
+        return new ViewerThumbnail(
+            $"stalled-near-{asset.Id}",
+            path,
+            1,
+            1);
     }
 }
 
