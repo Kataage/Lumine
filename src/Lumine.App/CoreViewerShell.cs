@@ -1,9 +1,12 @@
 using Avalonia;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Lumine.Core;
@@ -293,6 +296,9 @@ internal sealed class CoreViewerShell : UserControl
                     new ColumnDefinitions("*")
             };
         _browseViewer.Classes.Add("lumine-canvas-grid");
+        // Slide-in is clipped at the canvas boundary, not visible
+        // beyond the app's right edge while entering.
+        _browseViewer.ClipToBounds = true;
         _browseViewer.Children.Add(
             gridSurface);
         Grid.SetColumn(
@@ -502,6 +508,20 @@ internal sealed class CoreViewerShell : UserControl
 
     internal Rect ContextSurfaceBounds =>
         _contextSurface.Bounds;
+
+    internal bool InspectorEdgeDrawerForSmoke =>
+        _contextSurface.Margin == new Thickness(0)
+        && _contextSurface.CornerRadius == new CornerRadius(0)
+        && _contextSurface.BorderThickness == new Thickness(1, 0, 0, 0)
+        && _contextSurface.HorizontalAlignment == HorizontalAlignment.Right
+        && _contextSurface.VerticalAlignment == VerticalAlignment.Stretch;
+
+    internal bool InspectorSlideInConfiguredForSmoke =>
+        _contextSurface.Transitions?.OfType<TransformOperationsTransition>()
+            .Any(transition =>
+                transition.Property == Border.RenderTransformProperty
+                && transition.Duration == TimeSpan.FromMilliseconds(200))
+        == true;
 
     internal Rect GridViewerBounds =>
         _grid.Bounds;
@@ -740,16 +760,14 @@ internal sealed class CoreViewerShell : UserControl
                 HorizontalAlignment.Right;
             _contextSurface.VerticalAlignment =
                 VerticalAlignment.Stretch;
-            _contextSurface.Margin =
-                new Thickness(
-                    LumineDesign.Space12);
-            _contextSurface.CornerRadius =
-                new CornerRadius(
-                    LumineDesign.PanelRadius);
-            _contextSurface.BorderBrush =
-                LumineDesign.BorderStrong;
+            // An Inspector is a true edge drawer: flush with top,
+            // bottom and right canvas edges, never a floating rounded
+            // card with a conspicuous black gap around it.
+            _contextSurface.Margin = new Thickness(0);
+            _contextSurface.CornerRadius = new CornerRadius(0);
+            _contextSurface.BorderBrush = LumineDesign.Border;
             _contextSurface.BorderThickness =
-                new Thickness(1);
+                new Thickness(1, 0, 0, 0);
             _contextSurface.Width =
                 _compactInspectorLayout
                     ? Math.Clamp(
@@ -779,9 +797,6 @@ internal sealed class CoreViewerShell : UserControl
         // Inspector is docked we also reserve its actual column width.
         var inspectorReserve = _contextSurface.IsVisible
             ? _contextSurface.Width
-                + (_compactInspectorLayout
-                    ? 2 * LumineDesign.Space12
-                    : 0)
                 + 12
             : 0;
         _selectionBar.Width = Math.Min(
@@ -928,9 +943,47 @@ internal sealed class CoreViewerShell : UserControl
     internal async Task ShowContextDetailAsync(
         bool focusSelectedTab = false)
     {
+        var firstOpen = !_contextSurface.IsVisible;
+        // Stage the visual off the right canvas edge before showing it.
+        // The only animated property is the compositor-friendly transform:
+        // no thumbnail viewport resize, new bitmap request or tab rebuild.
+        if (firstOpen)
+        {
+            _contextSurface.Transitions = null;
+            _contextSurface.RenderTransform =
+                TransformOperations.Parse(
+                    $"translateX({_contextSurface.Width + 2:0.##}px)");
+        }
+
         _contextSurface.IsVisible = true;
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
+
+        if (firstOpen)
+        {
+            // Wait until the newly visible drawer has entered the tree;
+            // changes to the same control are then animated from right to 0.
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (!_contextSurface.IsVisible)
+                    {
+                        return;
+                    }
+                    _contextSurface.Transitions = new Transitions
+                    {
+                        new TransformOperationsTransition
+                        {
+                            Property = Border.RenderTransformProperty,
+                            Duration = TimeSpan.FromMilliseconds(200),
+                            Easing = new CubicEaseOut()
+                        }
+                    };
+                    _contextSurface.RenderTransform =
+                        TransformOperations.Parse("translateX(0px)");
+                },
+                DispatcherPriority.Render);
+        }
 
         var selectedIndex = _grid.SelectedAssetIndex;
         if (selectedIndex < 0)
@@ -992,7 +1045,10 @@ internal sealed class CoreViewerShell : UserControl
                 || focused.GetVisualAncestors()
                     .Contains(_contextSurface));
 
+        _contextSurface.Transitions = null;
         _contextSurface.IsVisible = false;
+        _contextSurface.RenderTransform =
+            TransformOperations.Parse("translateX(0px)");
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
 

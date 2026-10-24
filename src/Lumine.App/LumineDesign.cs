@@ -847,7 +847,9 @@ internal static class LumineDesign
             var button =
                 new Button
                 {
-                    Content = row
+                    Content = row,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch
                 };
             button.Classes.Add(
                 "lumine-nav-item");
@@ -924,16 +926,18 @@ internal static class LumineDesign
         // browsing/organization stays together; publishing is a separate
         // workflow. These are semantic group headings, NOT selectable
         // pseudo-pages or an extra navigation level.
+        // A Grid owns the entire sidebar width. Nested StackPanels
+        // previously measured the navigation to its text's natural width,
+        // producing short selected-row backgrounds in a wide sidebar.
         var destinations =
-            new StackPanel
+            new Grid
             {
-                Spacing = Space4,
+                RowDefinitions = new RowDefinitions(
+                    "Auto,Auto,Auto,Auto,Auto,Auto"),
+                RowSpacing = Space4,
                 Margin =
-                    new Thickness(
-                        Space8,
-                        0,
-                        Space8,
-                        Space8)
+                    new Thickness(Space8, 0, Space8, Space8),
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
         destinations.Children.Add(
             CreateSectionHeader("画像を探す"));
@@ -941,31 +945,38 @@ internal static class LumineDesign
              index < 3;
              index++)
         {
+            Grid.SetRow(buttons[index], index + 1);
             destinations.Children.Add(buttons[index]);
         }
 
-        destinations.Children.Add(
-            CreateSectionHeader("公開・管理"));
+        var section = CreateSectionHeader("公開・管理");
+        Grid.SetRow(section, 4);
+        destinations.Children.Add(section);
+        Grid.SetRow(buttons[3], 5);
         destinations.Children.Add(buttons[3]);
 
         var primaryRoot =
-            new StackPanel
+            new Grid
             {
-                Spacing = 0
+                RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
         primaryRoot.Children.Add(brandRow);
-        primaryRoot.Children.Add(
-            new Border
-            {
-                Height = 1,
-                Margin = new Thickness(Space16, Space4, Space16, 0),
-                Background = Border
-            });
+        var separator = new Border
+        {
+            Height = 1,
+            Margin = new Thickness(Space16, Space4, Space16, 0),
+            Background = Border
+        };
+        Grid.SetRow(separator, 1);
+        primaryRoot.Children.Add(separator);
+        Grid.SetRow(destinations, 2);
         primaryRoot.Children.Add(destinations);
 
         var primary =
             new Border
             {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Child = primaryRoot
             };
         primary.Classes.Add(

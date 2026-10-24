@@ -69,3 +69,64 @@ This is instrumentation, **not yet a navigation performance fix**. The P1 remain
 The source inspection found `ProductNavigationViews.CreateTags.ApplyFilter` recomputing the full stable sort by selected flag, descending asset count, and case-insensitive name **for every** search text change, selection change and manage-mode toggle, including repeated 10k-item snapshots. This makes frequent interactions pay O(n log n) sorting even though the base asset counts and names for that view do not change. The scope-limited optimization computes a once-per-view stable base order by descending asset count / case-insensitive name; when selected tags exist, it stable-partitions matching entries into selected and unselected groups with two linear passes. For no search and no selection, the same immutable snapshot can be reused without allocating a new 10,000-element array at every manage toggle. A search still performs case-insensitive substring filtering against all relevant tags. Because stable partition preserves the original base order within each selected/unselected group, this matches the prior three-level LINQ order, including ties, without turning virtualization off.
 
 The App smoke strengthens semantic acceptance: the *selected* tag now has a **lower** asset count than a nonselected tag, and the view must still present the selected tag first at both 100% and 225% scale, while checking its visible ✓ marker, accessible name, manage actions and screenshots. It retains the original 10k tag list/filter/realization test, end-to-end **<2000ms** hard navigation stopwatch, original real-library/Filesystem/Library 10k independently committed <=8s/Viewer/NativeAOT/Portable acceptance. It does not reduce the required 180ms filter debounce, alter source model input volume or change storage/SQLite. This is a production-relevant **repeated-navigation sorting reduction**, not proof that every external Windows runner jitter spike has been eliminated. Require full strict Windows CI and then postmerge observations before declaring #738 stable.
+
+
+## 2026-10-20 real-user Windows screenshot acceptance failure — actual layout correction
+
+**Owner-provided evidence** (two captures, issue #635): the unified left
+navigation only highlights/clicks the content-size portion of each button,
+leaving most of the 288-DIP sidebar unfilled. Inspector's stars and color
+swatches look vertically off-center. The Inspector overlays the canvas as
+a rounded, inset card with visible dark gaps at top, bottom and right,
+and simply appears instead of entering from the right. The owner rejects
+this as unacceptable UI quality despite multiple previous "UI/UX improved"
+reports. This is **not** a hypothetical screenshot polish issue.
+
+### Confirmed code causes
+
+- `LumineDesign.CreateExpandedNavigationBands` used stacked sizing
+  (two nested StackPanels / button natural content width) and relied on
+  implicit horizontal measurement. Make the expanded destination host a
+  width-filling Grid and explicitly stretch each Button hit target.
+- `ContextualAssetDetailPanel.CreateRatingPicker` used literal
+  `TextBlock("★")`; font fallback and ink baseline cannot guarantee a
+  centered glyph. Replace it with an equal-size geometric vector star
+  centered in its fixed-size 34x34 hit target. Keep native selection,
+  focus, keyboard and accessible names.
+- `CreateColorPicker` introduced explicit 4-DIP top/bottom margins on
+  28x28 hit targets. Remove biased external margins and preserve centered
+  20x20 color disk inside its 28x28 selected/focus ring.
+- `CoreViewerShell.ApplyInspectorLayout` explicitly added 12-DIP margins
+  on **all** overlay sides plus 10-DIP rounded corners and four-sided
+  borders. For an edge drawer, set **zero margins and zero radius**, and
+  a single left border; reserve exactly the occupied right-column width.
+  This preserves current main image viewport and allows the drawer to
+  cover the complete right canvas height.
+- Entering an initially hidden Inspector now starts outside the right
+  canvas boundary and transitions the **RenderTransform** (200ms ease-out)
+  to zero, while the original hosted ContextualAssetDetailPanel persists,
+  preserves field state and asynchronous image leases. Clip the canvas
+  ancestor so nothing overflows on entrance; do not change row caches,
+  SQLite, source work or native Bitmap budgets.
+
+### Automated product regression and remaining acceptance
+
+Mounted App smoke (real 1440x900 `MainWindow`) asserts all four primary
+expanded sidebar destination hit targets actually occupy >=240 DIP and
+have Stretch alignment; headless screenshot `browse-1440x900-sidebar`
+retained. Existing mounted Inspector smoke checks the stars' **actual
+computed center** via vector Path, checks colored swatch circles' computed
+center against button centers and removes 4-DIP vertical margins, and
+requires zero-gap edge geometry and configured right-slide transition
+for unpinned layouts. Original 900x600/1440x900 screenshots, first
+raster/Viewer performance, 100–225% text, keyboard/focus/inspector
+footers, Windows NativeAOT/Portable and all strict Library 8s and
+high-count navigation 2s gates remain unchanged.
+
+**Cannot be declared finished from CI alone:** after strict Windows CI
+and actual screenshot review, reissue a new NativeAOT Portable for a
+single final owner evaluation together with #634 scrolling. The owner
+must judge whether these precise observed layout defects are actually
+fixed on their screen. Do NOT ask the owner to validate the older
+PR #758 build again or silently close #635/#634. #738/#714 remain
+independent strict release blockers.

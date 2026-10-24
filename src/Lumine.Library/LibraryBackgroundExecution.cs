@@ -763,11 +763,13 @@ public sealed class LibraryService
     public Task<WindowsLibrarySyncSession> StartWindowsSyncAsync(
         long libraryId,
         CancellationToken cancellationToken = default,
-        IProgress<LibraryScanProgress>? progress = null) =>
+        IProgress<LibraryScanProgress>? progress = null,
+        Action<string>? reportBootstrapStage = null) =>
         LibraryBackgroundExecution.RunAsync(
             token => _syncService.StartAsync(
                 libraryId,
                 token,
-                progress),
+                progress,
+                reportBootstrapStage),
             cancellationToken);
 }

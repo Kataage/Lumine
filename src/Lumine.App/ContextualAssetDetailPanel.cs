@@ -2827,13 +2827,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 .Select(
                     rating =>
                     {
+                        // Font glyph ink is not geometrically centered:
+                        // star baseline, line height and font fallback can
+                        // make a 34-DIP square look visibly off-axis.
+                        // Use one centered scalable vector for all ratings.
                         var glyph =
-                            new TextBlock
+                            new Avalonia.Controls.Shapes.Path
                             {
-                                Text = "★",
-                                FontSize = 19,
-                                LineHeight = 20,
-                                TextAlignment = TextAlignment.Center,
+                                Data = Geometry.Parse(
+                                    "M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26Z"),
+                                Width = 20,
+                                Height = 20,
+                                Stretch = Stretch.Uniform,
                                 HorizontalAlignment = HorizontalAlignment.Center,
                                 VerticalAlignment = VerticalAlignment.Center,
                                 IsHitTestVisible = false
@@ -2985,10 +2990,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                 MinHeight = 28,
                                 MaxHeight = 28,
                                 Padding = new Thickness(0),
-                                Margin =
-                                    new Thickness(
-                                        0,
-                                        4),
+                                Margin = new Thickness(0),
                                 CornerRadius =
                                     new CornerRadius(14),
                                 Background = Brushes.Transparent,
@@ -3080,9 +3082,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         {
             var rating = index + 1;
             var button = _ratingButtons[index];
-            if (button.Content is TextBlock glyph)
+            if (button.Content is Avalonia.Controls.Shapes.Path glyph)
             {
-                glyph.Foreground =
+                glyph.Fill =
                     rating <= selected
                         ? LumineDesign.Warning
                         : LumineDesign.MutedForeground;

@@ -39,6 +39,7 @@ internal static class Program
             await VerifyInteractivePromotionAsync(thumbnailPath);
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
             await VerifyViewerSessionShutdownAsync(thumbnailPath);
+            await VerifyHeadlessDetailSessionShutdownAsync(thumbnailPath);
 
             await using var headless = HeadlessUnitTestSession.StartNew(typeof(TestApplication));
             await headless.Dispatch(
@@ -3483,6 +3484,29 @@ internal static class Program
             && session.Snapshot.IsOriginal
             && session.Snapshot.SelectedIndex == 1,
             "Second original did not proceed after the visual release fence completed.");
+    }
+
+    private static async Task VerifyHeadlessDetailSessionShutdownAsync(
+        string previewPath)
+    {
+        Require(
+            Application.Current is null,
+            "Headless detail teardown test must execute before Avalonia Application startup.");
+
+        // This is how NativeAOT --product-smoke uses the Viewer Core:
+        // the session was opened, but no visual tree, preview decode or
+        // dispatcher message loop has ever been created. It must drain
+        // without queuing UI-thread work that cannot be pumped.
+        var session = new ViewerDetailSession(
+            new DirectFixtureAssetProvider(0),
+            new DelayedDetailProvider(
+                previewPath,
+                TimeSpan.Zero));
+        await session.DisposeAsync().AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Require(
+            session.PreviewBitmapCache.Diagnostics.EntryCount == 0,
+            "Headless Viewer Detail disposal retained preview cache entries.");
     }
 
     private static async Task VerifyDetailSessionShutdownAsync(

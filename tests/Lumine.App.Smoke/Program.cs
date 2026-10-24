@@ -4727,7 +4727,11 @@ try
                     .OfType<Border>()
                     .Any(border =>
                         border.Classes.Contains("lumine-inspector-surface")
-                        && border.BorderThickness == new Thickness(1))
+                        // A real right-edge drawer has only a left divider,
+                        // not the former four-sided inset card border.
+                        && border.BorderThickness == new Thickness(1, 0, 0, 0)
+                        && border.Margin == new Thickness(0)
+                        && border.CornerRadius == new CornerRadius(0))
                 && shell.GetVisualDescendants()
                     .OfType<Border>()
                     .Any(border =>
@@ -4892,7 +4896,7 @@ try
                 && directRatingButtons.All(
                     static button =>
                     {
-                        if (button.Content is not TextBlock glyph)
+                        if (button.Content is not Avalonia.Controls.Shapes.Path glyph)
                         {
                             return false;
                         }
@@ -5012,7 +5016,24 @@ try
                         && button.HorizontalAlignment
                             == HorizontalAlignment.Center
                         && button.VerticalAlignment
-                            == VerticalAlignment.Center)
+                            == VerticalAlignment.Center
+                        && button.Margin.Top < 0.01
+                        && button.Margin.Bottom < 0.01
+                        && button.Content is Grid swatchHost
+                        && swatchHost.Children
+                            .OfType<Border>()
+                            .All(dot =>
+                            {
+                                var offset = dot.TranslatePoint(
+                                    new Point(0, 0), button);
+                                return offset is { } point
+                                    && Math.Abs(
+                                        point.X + dot.Bounds.Width / 2
+                                        - button.Bounds.Width / 2) <= 1
+                                    && Math.Abs(
+                                        point.Y + dot.Bounds.Height / 2
+                                        - button.Bounds.Height / 2) <= 1;
+                            }))
                 && colorCenters.Max(
                     static center => center.Y)
                     - colorCenters.Min(
@@ -9056,6 +9077,18 @@ try
                                     label.IsEffectivelyVisible
                                     && label.Text == "ライブラリ一覧"),
                             "Docked sidebar lost its browse/publish grouping, reading order or distinct contextual collection heading.");
+                        // The entire destination row, not only its
+                        // glyph+text natural width, must be clickable.
+                        // This is the actual 288-DIP sidebar in a mounted
+                        // 1440-DIP MainWindow, not a detached control test.
+                        Require(
+                            sidebarDestinations.Take(4).All(button =>
+                                button.Bounds.Width >= 240
+                                && button.HorizontalAlignment
+                                    == HorizontalAlignment.Stretch
+                                && button.HorizontalContentAlignment
+                                    == HorizontalAlignment.Stretch),
+                            "Expanded sidebar destination hit targets did not occupy the available menu width.");
                         CaptureVisualEvidence(
                             window,
                             "browse-1440x900-sidebar");
@@ -13099,6 +13132,13 @@ try
                                     $"saveContained={window.CurrentShell.ContextDetail.SaveActionButtonsContainedForSmoke}, " +
                                     $"footer={window.CurrentShell.ContextDetail.ContextualFooterLayoutForSmoke}.");
 
+                                if (!window.CurrentShell.IsInspectorPinnedForSmoke)
+                                {
+                                    Require(
+                                        window.CurrentShell.InspectorEdgeDrawerForSmoke
+                                        && window.CurrentShell.InspectorSlideInConfiguredForSmoke,
+                                        "Inspector did not dock flush to top/bottom/right or did not configure right-edge slide-in.");
+                                }
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
                                     && !navigationVisible

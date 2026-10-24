@@ -78,6 +78,13 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
 
     public ThumbnailCache ThumbnailCache { get; }
 
+    // Product-smoke-only shutdown boundary callback. The actual sync
+    // session reports its native watcher, processor and checkpoint phases.
+    internal Action<string>? ShutdownProgress
+    {
+        set => _syncSession.ShutdownProgress = value;
+    }
+
     internal ThumbnailDiagnosticsSnapshot ThumbnailPipelineDiagnostics =>
         _thumbnailPipeline.Diagnostics;
 
@@ -187,11 +194,22 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
 
         try
         {
+            // The same progress channel used by the UI can now show
+            // where native filesystem bootstrap is waiting. Report only
+            // fixed phase descriptions; never persist source paths.
+            Action<string>? reportSyncStage =
+                progress is null
+                    ? null
+                    : stage => progress.Report(
+                        new CoreViewerOpenProgress(
+                            CoreViewerOpenStage.SynchronizingLibrary,
+                            stage));
             syncSession =
                 await libraryService.StartWindowsSyncAsync(
                     library.Id,
                     cancellationToken,
-                    fullScanProgress).ConfigureAwait(false);
+                    fullScanProgress,
+                    reportSyncStage).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 
