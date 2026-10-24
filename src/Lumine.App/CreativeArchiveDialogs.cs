@@ -1464,6 +1464,30 @@ internal static class CreativeArchiveDialogs
         return root;
     }
 
+    // Exercises the EXACT shared production dialog geometry and fixed
+    // footer layout with the Publication form's unusually long body.
+    // No database operation or real publication is performed.
+    internal static Window CreatePublicationLayoutPreviewForSmoke(
+        Window owner)
+    {
+        var dialog = CreateDialog(owner, "Publicationを記録", 620, 800);
+        var form = CreateFormStack(
+            "公開記録の登録: 小さな画面でも保存とキャンセルは常に表示されます。");
+        for (var index = 0; index < 14; index++)
+        {
+            AddField(form, $"公開項目 {index + 1}", CreateMultiline("入力内容"));
+        }
+
+        var status = CreateStatus();
+        form.Children.Add(status);
+        form.Children.Add(
+            CreateButtons(
+                dialog,
+                () => new CreativeWorkDialogResult("fixture", string.Empty)));
+        dialog.Content = CreateDialogForm(form);
+        return dialog;
+    }
+
     private static ScrollViewer CreateScroll(
         Control child) =>
         new ScrollViewer
