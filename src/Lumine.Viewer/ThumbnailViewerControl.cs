@@ -2424,20 +2424,32 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
-    // One damaged/slow visible thumbnail must not veto all future
-    // scrolling readiness. Speculate only when native decoders are idle
-    // and the rest of the viewport is substantially painted.
+    // One slow or unavailable visible thumbnail must not disable
+    // lookahead for an otherwise ready, small Grid/List viewport.
+    // Previous attachedTiles / 8 became ZERO for 4-7 tiles, making
+    // even a single failed tile block all decoded next-row warmup.
+    // Keep foreground-first behavior: never predecode while a visible
+    // bitmap decoder is active or before a tiny viewport is fully ready.
     internal static bool CanWarmAheadOfViewportForSmoke(
         int attachedTiles,
         int readyTiles,
         int activeBitmapDecodes)
     {
-        if (attachedTiles <= 0 || activeBitmapDecodes != 0)
+        if (attachedTiles <= 0
+            || activeBitmapDecodes != 0
+            || readyTiles < 0
+            || readyTiles > attachedTiles)
         {
             return false;
         }
 
-        var toleratedSlowTiles = Math.Min(2, attachedTiles / 8);
+        // Keep 1-3 tile windows fully ready before warming: at that
+        // size a single tile may be most of the actual viewport.
+        // Larger windows tolerate one delayed tile, never more than
+        // two, and never expand cache, native decode or row budgets.
+        var toleratedSlowTiles = attachedTiles >= 4
+            ? Math.Min(2, Math.Max(1, attachedTiles / 8))
+            : 0;
         return readyTiles >= attachedTiles - toleratedSlowTiles;
     }
 

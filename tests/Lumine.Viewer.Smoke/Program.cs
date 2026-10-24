@@ -1311,9 +1311,17 @@ internal static class Program
                 attachedTiles: 35, readyTiles: 33, activeBitmapDecodes: 0)
             && ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
                 attachedTiles: 12, readyTiles: 11, activeBitmapDecodes: 0)
+            && ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 7, readyTiles: 6, activeBitmapDecodes: 0)
             && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
-                attachedTiles: 7, readyTiles: 6, activeBitmapDecodes: 0),
-            "A slow visible tile blocked warmup indefinitely or predecode stole native capacity from active foreground tiles.");
+                attachedTiles: 7, readyTiles: 5, activeBitmapDecodes: 0)
+            && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 7, readyTiles: 6, activeBitmapDecodes: 1)
+            && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 3, readyTiles: 2, activeBitmapDecodes: 0)
+            && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 7, readyTiles: 8, activeBitmapDecodes: 0),
+            "Small-view normal scroll did not warm its next row after one slow tile, or speculation stole active foreground decode capacity.");
 
         // Owner retest: even after the viewport-ahead repair, the
         // fixed 6/14 decoded-row ceiling can leave large configured
