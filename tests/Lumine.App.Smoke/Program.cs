@@ -14713,6 +14713,8 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "publication-small-640x480",
+                "publication-small-640x480-text225",
                 "dialog-confirm-danger",
                 "dialog-confirm-danger-text225",
                 "dialog-notify",
