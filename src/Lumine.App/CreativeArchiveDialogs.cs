@@ -417,6 +417,7 @@ internal static class CreativeArchiveDialogs
             MinHeight = 80
         };
         var dialog = CreateDialog(
+            owner,
             "Workを作成",
             500,
             390);
@@ -444,7 +445,7 @@ internal static class CreativeArchiveDialogs
                         title.Text.Trim(),
                         description.Text ?? string.Empty);
                 }));
-        dialog.Content = CreateScroll(stack);
+        dialog.Content = CreateDialogForm(stack);
         return ShowWithFocusReturnAsync<CreativeWorkDialogResult>(owner, dialog);
     }
 
@@ -478,6 +479,7 @@ internal static class CreativeArchiveDialogs
         var notes = CreateMultiline("Notes");
 
         var dialog = CreateDialog(
+            owner,
             "Generation Groupを作成",
             620,
             760);
@@ -570,7 +572,7 @@ internal static class CreativeArchiveDialogs
                         workflow.Text ?? string.Empty,
                         notes.Text ?? string.Empty);
                 }));
-        dialog.Content = CreateScroll(stack);
+        dialog.Content = CreateDialogForm(stack);
         return ShowWithFocusReturnAsync<CreativeGroupDialogResult>(owner, dialog);
     }
 
@@ -637,6 +639,7 @@ internal static class CreativeArchiveDialogs
             CreateStatus();
         var dialog =
             CreateDialog(
+                owner,
                 title,
                 520,
                 380);
@@ -668,9 +671,7 @@ internal static class CreativeArchiveDialogs
                     return new CreativeArchiveTargetDialogResult(
                         targets[target.SelectedIndex].Id);
                 }));
-        dialog.Content =
-            CreateScroll(
-                stack);
+        dialog.Content = CreateDialogForm(stack);
         return ShowWithFocusReturnAsync<CreativeArchiveTargetDialogResult>(owner, dialog);
     }
 
@@ -720,6 +721,7 @@ internal static class CreativeArchiveDialogs
         };
 
         var dialog = CreateDialog(
+            owner,
             "Lineageを作成",
             560,
             390);
@@ -748,7 +750,7 @@ internal static class CreativeArchiveDialogs
                         relationType,
                         note.Text ?? string.Empty);
                 }));
-        dialog.Content = CreateScroll(stack);
+        dialog.Content = CreateDialogForm(stack);
         return ShowWithFocusReturnAsync<CreativeRelationDialogResult>(owner, dialog);
     }
 
@@ -987,6 +989,7 @@ internal static class CreativeArchiveDialogs
         RenderDestination();
 
         var dialog = CreateDialog(
+            owner,
             "Publicationを記録",
             620,
             800);
@@ -1142,9 +1145,7 @@ internal static class CreativeArchiveDialogs
                         platformMetadata,
                         orderEditor.OrderedAssetIds);
                 }));
-        dialog.Content =
-            CreateScroll(
-                stack);
+        dialog.Content = CreateDialogForm(stack);
         return ShowWithFocusReturnAsync<CreativePublicationDialogResult>(owner, dialog);
     }
 
@@ -1182,23 +1183,95 @@ internal static class CreativeArchiveDialogs
         }
     }
 
+    // Window sizes are in Avalonia device-independent pixels. Clamp to
+    // the *current owner's client area* AND the active screen work area;
+    // the latter includes window frame/title bar headroom. A hard 800-DIP
+    // Publication height could otherwise place Save/Cancel off-screen.
+    internal static Size ResolveDialogSizeForSmoke(
+        double preferredWidth,
+        double preferredHeight,
+        double ownerWidth,
+        double ownerHeight,
+        double screenWorkWidth,
+        double screenWorkHeight)
+    {
+        const double minimumUsefulWidth = 240;
+        const double minimumUsefulHeight = 180;
+
+        static double BoundedDimension(
+            double preferred, double owner, double workArea,
+            double ownerInset, double screenInset, double fallback)
+        {
+            var limit = fallback;
+            if (double.IsFinite(owner) && owner > 0)
+            {
+                limit = Math.Min(limit, Math.Max(1, owner - ownerInset));
+            }
+
+            if (double.IsFinite(workArea) && workArea > 0)
+            {
+                limit = Math.Min(limit, Math.Max(1, workArea - screenInset));
+            }
+
+            return Math.Min(preferred, limit);
+        }
+
+        return new Size(
+            Math.Max(1, BoundedDimension(
+                preferredWidth, ownerWidth, screenWorkWidth,
+                24, 48, Math.Max(minimumUsefulWidth, preferredWidth))),
+            Math.Max(1, BoundedDimension(
+                preferredHeight, ownerHeight, screenWorkHeight,
+                24, 88, Math.Max(minimumUsefulHeight, preferredHeight))));
+    }
+
     private static Window CreateDialog(
+        Window owner,
         string title,
         double width,
-        double height) =>
-        new()
+        double height)
+    {
+        var dialog = new Window
         {
             Title = title,
-            Width = width,
-            Height = height,
-            MinWidth = Math.Min(width, 420),
-            MinHeight = Math.Min(height, 320),
             WindowStartupLocation =
                 WindowStartupLocation.CenterOwner,
             Background = LumineDesign.Background,
             Foreground = LumineDesign.Foreground,
-            FontFamily = LumineDesign.UiFont
+            FontFamily = LumineDesign.UiFont,
+            CanResize = true,
+            // Never let an old fixed MinHeight force the modal off-screen.
+            MinWidth = 1,
+            MinHeight = 1
         };
+
+        void FitToAvailableSpace()
+        {
+            var screen = owner.Screens.ScreenFromWindow(owner);
+            var screenWidth = screen is null
+                ? double.PositiveInfinity
+                : screen.WorkingArea.Width / Math.Max(1, screen.Scaling);
+            var screenHeight = screen is null
+                ? double.PositiveInfinity
+                : screen.WorkingArea.Height / Math.Max(1, screen.Scaling);
+            var result = ResolveDialogSizeForSmoke(
+                width, height,
+                owner.Bounds.Width, owner.Bounds.Height,
+                screenWidth, screenHeight);
+            dialog.MaxWidth = result.Width;
+            dialog.MaxHeight = result.Height;
+            dialog.Width = result.Width;
+            dialog.Height = result.Height;
+        }
+
+        FitToAvailableSpace();
+        EventHandler<SizeChangedEventArgs> ownerResized =
+            (_, _) => FitToAvailableSpace();
+        owner.SizeChanged += ownerResized;
+        dialog.Opened += (_, _) => FitToAvailableSpace();
+        dialog.Closed += (_, _) => owner.SizeChanged -= ownerResized;
+        return dialog;
+    }
 
     private static StackPanel CreateFormStack(
         string description)
@@ -1318,7 +1391,8 @@ internal static class CreativeArchiveDialogs
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "キャンセル"
+                    Content = "キャンセル",
+                    IsCancel = true
                 });
         cancel.Click +=
             (_, _) => dialog.Close(null);
@@ -1351,6 +1425,43 @@ internal static class CreativeArchiveDialogs
         row.Children.Add(cancel);
         row.Children.Add(save);
         return row;
+    }
+
+    // All archive forms share one scrollable body and a fixed bottom
+    // action row. Neither tall platform fields nor 225% text may push
+    // Save/Cancel outside the modal viewport. Validation remains visible
+    // above the actions even when the user is scrolled to the first field.
+    internal static Grid CreateDialogForm(StackPanel fields)
+    {
+        if (fields.Children.Count < 2
+            || fields.Children[fields.Children.Count - 1] is not StackPanel actions
+            || fields.Children[fields.Children.Count - 2] is not TextBlock status)
+        {
+            throw new InvalidOperationException(
+                "Archive dialog must end with validation status and Save/Cancel actions.");
+        }
+
+        fields.Children.Remove(actions);
+        fields.Children.Remove(status);
+
+        var footer = new StackPanel
+        {
+            Spacing = 8,
+            Margin = new Thickness(18, 8, 18, 12)
+        };
+        footer.Children.Add(status);
+        footer.Children.Add(actions);
+
+        var root = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto")
+        };
+        var scroll = CreateScroll(fields);
+        Grid.SetRow(scroll, 0);
+        root.Children.Add(scroll);
+        Grid.SetRow(footer, 1);
+        root.Children.Add(footer);
+        return root;
     }
 
     private static ScrollViewer CreateScroll(
