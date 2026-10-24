@@ -8686,6 +8686,105 @@ try
                             is >= 340 and <= 520,
                         $"Product dialog adaptive sizing escaped the 900x600-safe contract: {dialogSize.Width:N0}x{dialogSize.Height:N0}.");
 
+                    // Physical owner found the publication editor's
+                    // 620x800 fixed Window and bottom-of-scroll actions
+                    // unusable on smaller displays. Mount the same
+                    // production dialog frame with a deliberately long
+                    // publication body; verify fixed footer geometry.
+                    if (iteration == 0 || iteration == 2)
+                    {
+                        var smallOwner = new Window
+                        {
+                            Width = 640,
+                            Height = 480
+                        };
+                        smallOwner.Show();
+                        Dispatcher.UIThread.RunJobs();
+
+                        var publicationPreview =
+                            CreativeArchiveDialogs
+                                .CreatePublicationLayoutPreviewForSmoke(
+                                    smallOwner);
+                        publicationPreview.Show(smallOwner);
+                        Dispatcher.UIThread.RunJobs();
+
+                        var publicationGrid =
+                            publicationPreview.Content as Grid
+                            ?? throw new InvalidOperationException(
+                                "Publication modal no longer separates scrolling fields and fixed actions.");
+                        var publicationScroll =
+                            publicationGrid.Children
+                                .OfType<ScrollViewer>()
+                                .Single();
+                        var publicationFooter =
+                            publicationGrid.Children
+                                .OfType<StackPanel>()
+                                .Single();
+                        var publicationSave =
+                            publicationFooter.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.Content as string == "保存");
+                        var publicationCancel =
+                            publicationFooter.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.Content as string == "キャンセル");
+
+                        void CheckPublicationModalFits(double ownerHeight)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var footerAt =
+                                publicationFooter.TranslatePoint(
+                                    new Point(0, 0), publicationPreview);
+                            var saveAt =
+                                publicationSave.TranslatePoint(
+                                    new Point(0, 0), publicationPreview);
+                            Require(
+                                publicationPreview.Width
+                                    <= smallOwner.Bounds.Width - 20
+                                && publicationPreview.Height
+                                    <= ownerHeight - 20
+                                && publicationScroll.Bounds.Height > 0
+                                && publicationScroll.Extent.Height
+                                    > publicationScroll.Viewport.Height
+                                && footerAt is { } footerPoint
+                                && saveAt is { } savePoint
+                                && footerPoint.Y >= 0
+                                && footerPoint.Y
+                                    + publicationFooter.Bounds.Height
+                                    <= publicationPreview.Bounds.Height + 2
+                                && savePoint.Y >= 0
+                                && savePoint.Y
+                                    + publicationSave.Bounds.Height
+                                    <= publicationPreview.Bounds.Height + 2
+                                && publicationSave.IsEffectivelyVisible
+                                && publicationCancel.IsEffectivelyVisible
+                                && publicationCancel.IsCancel,
+                                "P0: Creative Publication Save/Cancel moved off-screen, or its long input form cannot scroll.");
+                        }
+
+                        CheckPublicationModalFits(480);
+                        if (visualOutputDirectory is not null)
+                        {
+                            CaptureVisualEvidence(
+                                publicationPreview,
+                                iteration == 2
+                                    ? "publication-small-640x480-text225"
+                                    : "publication-small-640x480");
+                        }
+
+                        // The modal must adapt even if the owner gets
+                        // smaller WHILE the dialog remains open.
+                        smallOwner.Width = 500;
+                        smallOwner.Height = 360;
+                        Dispatcher.UIThread.RunJobs();
+                        CheckPublicationModalFits(360);
+                        publicationPreview.Close();
+                        smallOwner.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     if ((iteration == 0 || iteration == 2)
                         && visualOutputDirectory is not null)
                     {
@@ -14614,6 +14713,8 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "publication-small-640x480",
+                "publication-small-640x480-text225",
                 "dialog-confirm-danger",
                 "dialog-confirm-danger-text225",
                 "dialog-notify",
