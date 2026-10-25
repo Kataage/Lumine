@@ -49,6 +49,10 @@ public sealed class MainWindow : Window
     private CancellationTokenSource? _navigationCancellation;
     private long _navigationSnapshotGeneration;
     private Task _openOperation = Task.CompletedTask;
+    // A newer open cancels the older request, but the superseded task may
+    // still own a local (not yet attached) CoreViewerRuntime/SQLite session.
+    // Shutdown must join *all* opens, never just the latest slot.
+    private readonly HashSet<Task> _openInFlight = [];
     private Task _runtimeDiagnosticsOperation = Task.CompletedTask;
     private Task _diagnosticFlushOperation = Task.CompletedTask;
     private Task _navigationOperation = Task.CompletedTask;
@@ -666,6 +670,14 @@ public sealed class MainWindow : Window
     // before it may commit UI navigation, to prove the close barrier drains
     // its callback even if cancellation arrives after the database work.
     internal Func<Task>? RescanAfterReconcileForSmokeAsync { get; set; }
+
+    // Mounted ownership-only seam after a real CoreViewerRuntime.OpenAsync:
+    // hold an older open's *locally owned* runtime while a newer one wins.
+    internal Func<string, Task>? OpenAfterRuntimeCreatedForSmokeAsync
+    {
+        get;
+        set;
+    }
 
     // #737 mounted close-race: exercise the real catalog SQLite update
     // without disabling the open Viewer. An already-enabled library is
@@ -3871,12 +3883,17 @@ public sealed class MainWindow : Window
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
             libraryRoot);
+        if (_closeStarted)
+        {
+            return Task.CompletedTask;
+        }
 
         var operation = OpenLibraryCoreAsync(
             libraryRoot,
             dataPaths,
             cancellationToken);
         _openOperation = operation;
+        _openInFlight.Add(operation);
         return ObserveOpenOperationAsync(operation);
     }
 
@@ -3988,6 +4005,7 @@ public sealed class MainWindow : Window
         }
         finally
         {
+            _openInFlight.Remove(operation);
             if (ReferenceEquals(
                     _openOperation,
                     operation))
@@ -4004,16 +4022,37 @@ public sealed class MainWindow : Window
         CancellationToken cancellationToken)
     {
         _openCancellation?.Cancel();
-        _openCancellation?.Dispose();
-        _openCancellation =
+        // An earlier request may still be unwinding SQLite and reading its
+        // CancellationToken. Let that request own and dispose its source,
+        // rather than disposing it when a new request supersedes it.
+        using var openCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken);
+        _openCancellation = openCancellation;
+        try
+        {
+            await OpenLibraryOwnedCoreAsync(
+                libraryRoot,
+                dataPaths,
+                openCancellation.Token);
+        }
+        finally
+        {
+            if (ReferenceEquals(_openCancellation, openCancellation))
+            {
+                _openCancellation = null;
+            }
+        }
+    }
 
-        var operationToken =
-            _openCancellation.Token;
-
+    private async Task OpenLibraryOwnedCoreAsync(
+        string libraryRoot,
+        AppDataPaths? dataPaths,
+        CancellationToken operationToken)
+    {
         await _navigationInitialization
             .WaitAsync(operationToken);
+        operationToken.ThrowIfCancellationRequested();
 
         _browseFilterState =
             new BrowseFilterState(
@@ -4034,6 +4073,7 @@ public sealed class MainWindow : Window
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
+        operationToken.ThrowIfCancellationRequested();
         _expandedFolderPaths.Clear();
 
         ShowLibrarySurface(
@@ -4045,7 +4085,9 @@ public sealed class MainWindow : Window
             new Progress<CoreViewerOpenProgress>(
                 update =>
                 {
-                    if (acceptOpenProgress)
+                    if (acceptOpenProgress
+                        && !_closeStarted
+                        && !operationToken.IsCancellationRequested)
                     {
                         loadingProgress.Text =
                             FormatOpenProgress(update);
@@ -4065,6 +4107,11 @@ public sealed class MainWindow : Window
                 _thumbnailStorageMode,
                 BuildBrowseQuery(),
                 _fileTypePolicy);
+
+            if (OpenAfterRuntimeCreatedForSmokeAsync is { } beforeCommit)
+            {
+                await beforeCommit(libraryRoot);
+            }
 
             operationToken.ThrowIfCancellationRequested();
             acceptOpenProgress = false;
@@ -4135,7 +4182,9 @@ public sealed class MainWindow : Window
             when (operationToken.IsCancellationRequested)
         {
             acceptOpenProgress = false;
-            if (!_closeStarted)
+            if (!_closeStarted
+                && !ReferenceEquals(_openCancellation, null)
+                && _openCancellation.Token == operationToken)
             {
                 _productShellState = "Welcome";
                 var cancelledStatus =
@@ -4155,28 +4204,34 @@ public sealed class MainWindow : Window
                 "library",
                 $"Open failed: {exception.Message}");
 
-            _failedLibraryRoot =
-                libraryRoot;
-            _failedLibraryDataPaths =
-                dataPaths;
-            DismissCompactNavigationOverlayForBlockingState();
-            _productShellState = "Error";
-            _status.Foreground =
-                LumineDesign.Danger;
-            _status.Text =
-                string.Empty;
-            ShowLibrarySurface(
-                CreateLibraryOpenFailureState(
-                    exception));
+            if (!_closeStarted
+                && _openCancellation?.Token == operationToken)
+            {
+                _failedLibraryRoot =
+                    libraryRoot;
+                _failedLibraryDataPaths =
+                    dataPaths;
+                DismissCompactNavigationOverlayForBlockingState();
+                _productShellState = "Error";
+                _status.Foreground =
+                    LumineDesign.Danger;
+                _status.Text =
+                    string.Empty;
+                ShowLibrarySurface(
+                    CreateLibraryOpenFailureState(
+                        exception));
+            }
         }
         finally
         {
+            acceptOpenProgress = false;
             if (runtime is not null)
             {
                 await runtime.DisposeAsync();
             }
 
-            if (!_closeStarted)
+            if (!_closeStarted
+                && _openCancellation?.Token == operationToken)
             {
                 _openFolder.IsEnabled = true;
             }
@@ -4630,7 +4685,10 @@ public sealed class MainWindow : Window
 
             try
             {
-                await _openOperation;
+                // Snapshot after setting _closeStarted: no more open Tasks
+                // may register. Await cancelled older opens too, including
+                // their local not-yet-attached runtime disposal.
+                await Task.WhenAll(_openInFlight.ToArray());
             }
             catch (OperationCanceledException)
             {
