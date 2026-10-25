@@ -14442,7 +14442,9 @@ try
                     // neither can be abandoned while the window closes.
                     TaskCompletionSource<bool>? releaseNavigation = null;
                     TaskCompletionSource<bool>? releasePublication = null;
+                    TaskCompletionSource<bool>? releaseCatalog = null;
                     Task? directNavigationTask = null;
+                    Task? pendingCatalog = null;
                     Task<PublicationDestinationInfo?>? pendingPublication = null;
                     try
                     {
@@ -14507,6 +14509,29 @@ try
                             await publicationEntered.Task.WaitAsync(
                                 TimeSpan.FromSeconds(10));
                             window.PublicationBeforeCommitForSmokeAsync = null;
+
+                            // #737: a real idempotent catalog SQLite UPDATE
+                            // (enabled -> enabled) must be close-owned too.
+                            // Hold AFTER the completed write but BEFORE its
+                            // UI continuation; the Publication gate lets us
+                            // verify the catalog independently.
+                            var catalogEntered =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            releaseCatalog =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            var releaseForCatalog = releaseCatalog;
+                            window.LibraryCatalogBeforeCommitForSmokeAsync = async () =>
+                            {
+                                catalogEntered.TrySetResult(true);
+                                await releaseForCatalog.Task;
+                            };
+                            pendingCatalog =
+                                window.RefreshEnabledLibraryRegistrationForSmokeAsync();
+                            await catalogEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.LibraryCatalogBeforeCommitForSmokeAsync = null;
                         }
 
                         window.Close();
@@ -14521,6 +14546,22 @@ try
                             Require(
                                 window.IsVisible,
                                 "MainWindow closed before a pending Publication write callback finished draining.");
+
+                            // Release only Publication. Catalog is still
+                            // held; close must not complete until BOTH
+                            // independent SQLite callback owners drain.
+                            releasePublication.TrySetResult(true);
+                            await pendingPublication!;
+                            for (var catalogDrainAttempt = 0;
+                                 catalogDrainAttempt < 10;
+                                 catalogDrainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                window.IsVisible && pendingCatalog is { IsCompleted: false },
+                                "MainWindow closed while a library-catalog SQLite mutation still owned an unfinished callback.");
                         }
                         if (releaseNavigation is not null)
                         {
@@ -14541,8 +14582,15 @@ try
                     {
                         window.NavigationBeforeCommitForSmokeAsync = null;
                         window.PublicationBeforeCommitForSmokeAsync = null;
+                        window.LibraryCatalogBeforeCommitForSmokeAsync = null;
                         releaseNavigation?.TrySetResult(true);
                         releasePublication?.TrySetResult(true);
+                        releaseCatalog?.TrySetResult(true);
+                    }
+
+                    if (pendingCatalog is not null)
+                    {
+                        await pendingCatalog;
                     }
 
                     if (pendingPublication is not null)
