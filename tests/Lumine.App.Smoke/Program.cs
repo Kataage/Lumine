@@ -14426,6 +14426,70 @@ try
                             StringComparison.Ordinal),
                         "User-visible runtime diagnostics omitted the product-default memory-only policy/cache state.");
 
+                    if (iteration == 2)
+                    {
+                        // #737: Replacing a Library runtime, not only
+                        // closing MainWindow, must drain a real manual
+                        // reconcile before disposing its SQLite owner.
+                        var switchRescanEntered =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        var releaseSwitchRescan =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        window.RescanAfterReconcileForSmokeAsync = async () =>
+                        {
+                            switchRescanEntered.TrySetResult(true);
+                            await releaseSwitchRescan.Task;
+                        };
+
+                        Task? pendingSwitch = null;
+                        Task? pendingSwitchRescan = null;
+                        try
+                        {
+                            pendingSwitchRescan =
+                                window.RescanActiveLibraryForSmokeAsync();
+                            await switchRescanEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.RescanAfterReconcileForSmokeAsync = null;
+
+                            pendingSwitch =
+                                window.OpenLibraryAsync(repeatedEmptyLibraryRoot);
+                            for (var switchDrainAttempt = 0;
+                                 switchDrainAttempt < 10;
+                                 switchDrainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                !pendingSwitch.IsCompleted
+                                && !pendingSwitchRescan.IsCompleted,
+                                "Library switch disposed a runtime before its active manual SQLite rescan callback finished.");
+                        }
+                        finally
+                        {
+                            window.RescanAfterReconcileForSmokeAsync = null;
+                            releaseSwitchRescan.TrySetResult(true);
+                        }
+
+                        await pendingSwitchRescan!;
+                        await pendingSwitch!;
+                        Require(
+                            window.CurrentRuntime is not null
+                            && window.CurrentShell is null
+                            && window.ProductShellState == "EmptyLibrary",
+                            "Library switch failed after safely draining manual SQLite reconciliation.");
+
+                        await window.OpenLibraryAsync(repeatedLibraryRoot);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.CurrentRuntime is not null
+                            && window.CurrentShell is not null
+                            && window.ProductShellState == "Workspace",
+                            "Reopening after a drained manual rescan lost the active Viewer runtime.");
+                    }
+
                     var detail =
                         window.CurrentShell!.DetailViewer;
                     await detail.SelectAsync(0);
@@ -14443,8 +14507,10 @@ try
                     TaskCompletionSource<bool>? releaseNavigation = null;
                     TaskCompletionSource<bool>? releasePublication = null;
                     TaskCompletionSource<bool>? releaseCatalog = null;
+                    TaskCompletionSource<bool>? releaseRescan = null;
                     Task? directNavigationTask = null;
                     Task? pendingCatalog = null;
+                    Task? pendingRescan = null;
                     Task<PublicationDestinationInfo?>? pendingPublication = null;
                     try
                     {
@@ -14532,6 +14598,29 @@ try
                             await catalogEntered.Task.WaitAsync(
                                 TimeSpan.FromSeconds(10));
                             window.LibraryCatalogBeforeCommitForSmokeAsync = null;
+
+                            // After an actual filesystem + SQLite reconcile,
+                            // suspend before its UI continuation. A close
+                            // cancels any active scan but MUST also await
+                            // this already-finished SQL callback. It is an
+                            // independent owner from Catalog and Publication.
+                            var rescanEntered =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            releaseRescan =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            var releaseForRescan = releaseRescan;
+                            window.RescanAfterReconcileForSmokeAsync = async () =>
+                            {
+                                rescanEntered.TrySetResult(true);
+                                await releaseForRescan.Task;
+                            };
+                            pendingRescan =
+                                window.RescanActiveLibraryForSmokeAsync();
+                            await rescanEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.RescanAfterReconcileForSmokeAsync = null;
                         }
 
                         window.Close();
@@ -14562,6 +14651,24 @@ try
                             Require(
                                 window.IsVisible && pendingCatalog is { IsCompleted: false },
                                 "MainWindow closed while a library-catalog SQLite mutation still owned an unfinished callback.");
+
+                            // Now release Catalog as well. The completed
+                            // reconciliation is still suspended, so the
+                            // window must not close early even though all
+                            // other explicitly held database tasks drained.
+                            releaseCatalog!.TrySetResult(true);
+                            await pendingCatalog!;
+                            for (var rescanDrainAttempt = 0;
+                                 rescanDrainAttempt < 10;
+                                 rescanDrainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                window.IsVisible
+                                && pendingRescan is { IsCompleted: false },
+                                "MainWindow closed before the in-flight library rescan callback completed.");
                         }
                         if (releaseNavigation is not null)
                         {
@@ -14583,14 +14690,21 @@ try
                         window.NavigationBeforeCommitForSmokeAsync = null;
                         window.PublicationBeforeCommitForSmokeAsync = null;
                         window.LibraryCatalogBeforeCommitForSmokeAsync = null;
+                        window.RescanAfterReconcileForSmokeAsync = null;
                         releaseNavigation?.TrySetResult(true);
                         releasePublication?.TrySetResult(true);
                         releaseCatalog?.TrySetResult(true);
+                        releaseRescan?.TrySetResult(true);
                     }
 
                     if (pendingCatalog is not null)
                     {
                         await pendingCatalog;
+                    }
+
+                    if (pendingRescan is not null)
+                    {
+                        await pendingRescan;
                     }
 
                     if (pendingPublication is not null)

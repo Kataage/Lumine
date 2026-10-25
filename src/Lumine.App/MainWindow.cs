@@ -56,6 +56,15 @@ public sealed class MainWindow : Window
     // after a newer navigation request supersedes it. Drain ALL of them at
     // window shutdown, not just the most recent operation.
     private readonly HashSet<Task> _navigationInFlight = [];
+    // Rescans are SQLite/FS operations, not a disposable UI refresh.
+    // Cancel them on close and drain their complete Task before disposing
+    // the active Viewer runtime and its database connections.
+    private readonly HashSet<CancellationTokenSource> _rescanCancellations = [];
+    // A library switch can dispose the old runtime independently of
+    // MainWindow closing. Drain these specific Tasks before replacing it;
+    // awaiting the entire navigation set here would deadlock catalog
+    // mutations that themselves invoke DisposeCurrentRuntimeAsync.
+    private readonly HashSet<Task> _rescanInFlight = [];
     private Window? _diagnosticsWindow;
     private WindowState? _lightboxPreviousWindowState;
     private bool _lightboxFullScreen;
@@ -652,6 +661,11 @@ public sealed class MainWindow : Window
 
     internal IReadOnlyList<PublicationDestinationInfo>
         PublicationDestinationsForSmoke => _publicationDestinations;
+
+    // Mounted lifetime regression: hold the *completed real reconcile*
+    // before it may commit UI navigation, to prove the close barrier drains
+    // its callback even if cancellation arrives after the database work.
+    internal Func<Task>? RescanAfterReconcileForSmokeAsync { get; set; }
 
     // #737 mounted close-race: exercise the real catalog SQLite update
     // without disabling the open Viewer. An already-enabled library is
@@ -2533,6 +2547,22 @@ public sealed class MainWindow : Window
     private async Task RescanLibraryAsync(
         LibraryCatalogItem library)
     {
+        var operation = RunTrackedNavigationMutationAsync(
+            () => RescanLibraryCoreAsync(library));
+        _rescanInFlight.Add(operation);
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            _rescanInFlight.Remove(operation);
+        }
+    }
+
+    private async Task RescanLibraryCoreAsync(
+        LibraryCatalogItem library)
+    {
         var runtime = _runtime;
         if (runtime is null
             || runtime.Library.Id != library.Id)
@@ -2544,6 +2574,8 @@ public sealed class MainWindow : Window
             return;
         }
 
+        using var cancellation = new CancellationTokenSource();
+        _rescanCancellations.Add(cancellation);
         var runtimeBefore = runtime;
         var acceptProgress = true;
         _status.Foreground =
@@ -2556,6 +2588,8 @@ public sealed class MainWindow : Window
                 scan =>
                 {
                     if (!acceptProgress
+                        || _closeStarted
+                        || cancellation.IsCancellationRequested
                         || !ReferenceEquals(
                             _runtime,
                             runtimeBefore))
@@ -2574,17 +2608,31 @@ public sealed class MainWindow : Window
             var result =
                 await runtime.SyncSession
                     .ReconcileNowAsync(
+                        cancellationToken: cancellation.Token,
                         progress: progress);
             acceptProgress = false;
 
-            if (!ReferenceEquals(
-                    _runtime,
-                    runtimeBefore))
+            // Test-only post-SQL barrier; the production path is unchanged.
+            if (RescanAfterReconcileForSmokeAsync is { } beforeUiCommit)
+            {
+                await beforeUiCommit();
+            }
+
+            if (_closeStarted
+                || cancellation.IsCancellationRequested
+                || !ReferenceEquals(_runtime, runtimeBefore))
             {
                 return;
             }
 
             await ApplyBrowseQueryAsync();
+            if (_closeStarted
+                || cancellation.IsCancellationRequested
+                || !ReferenceEquals(_runtime, runtimeBefore))
+            {
+                return;
+            }
+
             StartNavigationRefresh();
 
             _status.Foreground =
@@ -2596,15 +2644,19 @@ public sealed class MainWindow : Window
             _ = ClearTransientStatusAsync(
                 completionStatus);
         }
+        catch (OperationCanceledException)
+            when (cancellation.IsCancellationRequested)
+        {
+            // Shutdown requested; the tracked Task is still awaited by
+            // MainWindow before runtime/database disposal.
+        }
         catch (Exception exception)
         {
-            acceptProgress = false;
             _host?.Log.Write(
                 "library",
                 $"Rescan failed: {exception.Message}");
-            if (ReferenceEquals(
-                    _runtime,
-                    runtimeBefore))
+            if (!_closeStarted
+                && ReferenceEquals(_runtime, runtimeBefore))
             {
                 _status.Foreground =
                     LumineDesign.Warning;
@@ -2613,6 +2665,11 @@ public sealed class MainWindow : Window
             }
 
             throw;
+        }
+        finally
+        {
+            acceptProgress = false;
+            _rescanCancellations.Remove(cancellation);
         }
     }
 
@@ -4547,6 +4604,10 @@ public sealed class MainWindow : Window
         _openCancellation?.Cancel();
         _diagnosticsCancellation?.Cancel();
         _navigationCancellation?.Cancel();
+        foreach (var rescanCancellation in _rescanCancellations.ToArray())
+        {
+            rescanCancellation.Cancel();
+        }
         _diagnosticsWindow?.Close();
 
         Exception? shutdownFailure = null;
@@ -4983,6 +5044,32 @@ public sealed class MainWindow : Window
 
     private async Task DisposeCurrentRuntimeAsync()
     {
+        // The manual sync query has its own SQLite mutation gate and is not
+        // joined by WindowsLibrarySyncSession.DisposeAsync. Cancel and join
+        // before the old runtime can be detached on library switch, disable
+        // or window close. Never await all _navigationInFlight here: a
+        // tracked library-catalog operation can itself call this method.
+        foreach (var rescanCancellation in _rescanCancellations.ToArray())
+        {
+            rescanCancellation.Cancel();
+        }
+
+        try
+        {
+            await Task.WhenAll(_rescanInFlight.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            // The initiating UI callback reports the failed scan; the
+            // runtime switch still must dispose the old database safely.
+            _host?.Log.Write(
+                "library",
+                $"Manual rescan drain completed with error: {exception.Message}");
+        }
+
         var shell = _shell;
         var runtime = _runtime;
 
