@@ -14508,6 +14508,8 @@ try
                     TaskCompletionSource<bool>? releasePublication = null;
                     TaskCompletionSource<bool>? releaseCatalog = null;
                     TaskCompletionSource<bool>? releaseRescan = null;
+                    TaskCompletionSource<bool>? releaseSupersededOpen = null;
+                    Task? pendingSupersededOpen = null;
                     Task? directNavigationTask = null;
                     Task? pendingCatalog = null;
                     Task? pendingRescan = null;
@@ -14552,6 +14554,43 @@ try
 
                         if (iteration == 2)
                         {
+                            // #737: the first real CoreViewerRuntime.OpenAsync
+                            // has returned an owned runtime but has not yet
+                            // transferred it to MainWindow. A newer open
+                            // supersedes it, and close must still join the
+                            // older request's finally/disposal.
+                            var oldOpenEntered =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            releaseSupersededOpen =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            var releaseForOldOpen = releaseSupersededOpen;
+                            window.OpenAfterRuntimeCreatedForSmokeAsync = async openedRoot =>
+                            {
+                                if (string.Equals(
+                                        openedRoot,
+                                        repeatedEmptyLibraryRoot,
+                                        StringComparison.OrdinalIgnoreCase))
+                                {
+                                    oldOpenEntered.TrySetResult(true);
+                                    await releaseForOldOpen.Task;
+                                }
+                            };
+                            pendingSupersededOpen =
+                                window.OpenLibraryAsync(repeatedEmptyLibraryRoot);
+                            await oldOpenEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.OpenAfterRuntimeCreatedForSmokeAsync = null;
+                            await window.OpenLibraryAsync(repeatedLibraryRoot);
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                window.CurrentRuntime is not null
+                                && window.CurrentShell is not null
+                                && window.ProductShellState == "Workspace"
+                                && !pendingSupersededOpen.IsCompleted,
+                                "New library open did not supersede the held older runtime safely.");
+
                             // A real Publication destination INSERT has
                             // completed, but the async callback is paused
                             // before returning to MainWindow. The SQLite
@@ -14669,6 +14708,23 @@ try
                                 window.IsVisible
                                 && pendingRescan is { IsCompleted: false },
                                 "MainWindow closed before the in-flight library rescan callback completed.");
+
+                            // Release every other explicitly held SQLite
+                            // operation; the superseded *local* runtime
+                            // must alone be sufficient to hold shutdown.
+                            releaseRescan!.TrySetResult(true);
+                            await pendingRescan!;
+                            for (var oldOpenDrainAttempt = 0;
+                                 oldOpenDrainAttempt < 10;
+                                 oldOpenDrainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                window.IsVisible
+                                && pendingSupersededOpen is { IsCompleted: false },
+                                "MainWindow closed before the superseded library open disposed its private SQLite runtime.");
                         }
                         if (releaseNavigation is not null)
                         {
@@ -14691,10 +14747,20 @@ try
                         window.PublicationBeforeCommitForSmokeAsync = null;
                         window.LibraryCatalogBeforeCommitForSmokeAsync = null;
                         window.RescanAfterReconcileForSmokeAsync = null;
+                        window.OpenAfterRuntimeCreatedForSmokeAsync = null;
+                        releaseSupersededOpen?.TrySetResult(true);
                         releaseNavigation?.TrySetResult(true);
                         releasePublication?.TrySetResult(true);
                         releaseCatalog?.TrySetResult(true);
                         releaseRescan?.TrySetResult(true);
+                    }
+
+                    if (pendingSupersededOpen is not null)
+                    {
+                        await pendingSupersededOpen;
+                        Require(
+                            window.ProductShellState != "EmptyLibrary",
+                            "Cancelled older open overwrote the newer library's visible product state.");
                     }
 
                     if (pendingCatalog is not null)
