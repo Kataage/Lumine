@@ -2709,6 +2709,23 @@ try
                 RealizedNavigationRows(tagsView) is > 0 and < 128,
                 "10k tag navigation materialized an unbounded visual tree.");
 
+            // Browsing 10k Tags must not construct hidden complex
+            // ColorPickers for a create Flyout the user never opens.
+            var unopenedCreateAction =
+                tagsView.GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button => button.Content as string == "＋ 新規");
+            Require(
+                unopenedCreateAction.Flyout is Flyout
+                {
+                    Content: Border unopenedCreateSurface
+                }
+                && !unopenedCreateSurface
+                    .GetVisualDescendants()
+                    .OfType<TagColorEditor>()
+                    .Any(),
+                "Tag navigation eagerly instantiated a hidden new-tag ColorPicker.");
+
             tagInitialListMs =
                 navigationScaleWatch.Elapsed.TotalMilliseconds - tagPhaseStartMs;
             tagPhaseStartMs = navigationScaleWatch.Elapsed.TotalMilliseconds;
@@ -2890,6 +2907,24 @@ try
                                 .OfType<ListBox>()
                                 .Single().ItemTemplate),
                         "Tag manage-mode toggle reused a stale browse-row template.");
+
+                    // Both of these small-list Edit rows are realized,
+                    // but their unused Flyouts must not allocate a
+                    // heavyweight TagColorEditor/ColorPicker yet.
+                    var unopenedEditFlyouts =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Where(button => button.Content as string
+                                == "編集")
+                            .Select(button => button.Flyout as Flyout)
+                            .ToArray();
+                    Require(
+                        unopenedEditFlyouts.Length == 2
+                        && unopenedEditFlyouts.All(flyout =>
+                            flyout?.Content is Border editSurface
+                            && !editSurface.GetVisualDescendants()
+                                .OfType<TagColorEditor>().Any()),
+                        "Tag management eagerly instantiated an unopened Edit ColorPicker.");
 
                     var selectedManageSurface =
                         selectedTagView.GetVisualDescendants()
