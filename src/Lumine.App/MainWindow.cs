@@ -2680,6 +2680,13 @@ public sealed class MainWindow : Window
                 "ライブラリを無効化しました。");
         }
 
+        // Runtime detachment above can yield to a concurrent window
+        // close. Do not begin a second catalog SQLite write afterward.
+        if (_closeStarted)
+        {
+            return;
+        }
+
         var changed =
             await _navigationLibraryService.SetLibraryEnabledAsync(
                 library.Id,
