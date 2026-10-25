@@ -2227,31 +2227,33 @@ public sealed class ThumbnailViewerControl : UserControl
             var afterRanges = SplitLookaheadRangeForSmoke(
                 afterStartIndex, afterCount, columns,
                 beforeViewport: false);
-            if (direction < 0 && beforeRanges.NearCount > 0)
+            // Start the existing nearest source requests immediately,
+            // but never WAIT for the whole row before bitmap warmup.
+            // One unusually slow file must not hold every other decoded
+            // presentation hostage. Both tasks are observed and drained
+            // on cancellation; source request count/priority is unchanged.
+            var nearSourceTasks = new List<Task>(2);
+            if (beforeRanges.NearCount > 0)
             {
-                await session.PrefetchAsync(
+                var nearBefore = session.PrefetchAsync(
                     beforeRanges.NearStart,
                     beforeRanges.NearCount,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken);
+                TrackTileLoad(nearBefore);
+                nearSourceTasks.Add(nearBefore);
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
             if (afterRanges.NearCount > 0)
             {
-                await session.PrefetchAsync(
+                var nearAfter = session.PrefetchAsync(
                     afterRanges.NearStart,
                     afterRanges.NearCount,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken);
+                TrackTileLoad(nearAfter);
+                nearSourceTasks.Add(nearAfter);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (direction >= 0 && beforeRanges.NearCount > 0)
-            {
-                await session.PrefetchAsync(
-                    beforeRanges.NearStart,
-                    beforeRanges.NearCount,
-                    cancellationToken).ConfigureAwait(false);
-            }
 
             // ScrollIntoView can jump upward from a far-away position.
             // Its last offset direction is NOT the user's next scroll
@@ -2383,6 +2385,11 @@ public sealed class ThumbnailViewerControl : UserControl
                         cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            // The near requests were started before Bitmap warmup; join
+            // them now so any source error is still reported, without
+            // imposing an all-tiles-ready barrier on visible-ahead Bitmaps.
+            await Task.WhenAll(nearSourceTasks).ConfigureAwait(false);
 
             // Longer-range source prefetch still runs, but only after the
             // near rows have had an opportunity to become decoded Bitmaps.
@@ -2709,77 +2716,113 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    // A slow metadata/source request in one slot must not serialize the
+    // entire next row. Two bounded workers overlap I/O only; the shared
+    // DecodedBitmapCache.DecodeGate still caps native bitmap decoding,
+    // and the existing entry/byte budget remains the admission limit.
     private async Task PredecodeNextRowAsync(
         ViewerSession session,
         long startIndex,
         int count,
         CancellationToken cancellationToken)
     {
-        for (var offset = 0; offset < count; offset++)
+        var nextOffset = -1;
+
+        async Task WorkerAsync()
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var index = startIndex + offset;
-            DecodedBitmapLease? lease = null;
-            try
+            while (true)
             {
-                var asset = await session.GetAssetAsync(
-                    index, cancellationToken).ConfigureAwait(false);
-                var thumbnail = await session.GetThumbnailAsync(
-                    asset,
-                    ViewerThumbnailPriority.Background,
-                    cancellationToken).ConfigureAwait(false);
-                lease = await session.BitmapCache.AcquireAsync(
-                    thumbnail,
-                    cancellationToken).ConfigureAwait(false);
-
-                // Warm descriptors and decoded cache residency must be
-                // updated together on UI thread. An unleased bitmap
-                // remains in the bounded LRU until later eviction.
-                var acquired = lease;
-                await Dispatcher.UIThread.InvokeAsync(
-                    () =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (ReferenceEquals(_session, session))
-                        {
-                            RememberWarmPresentation(
-                                index,
-                                asset,
-                                thumbnail);
-                            Interlocked.Increment(
-                                ref _lookaheadBitmapsPredecoded);
-                        }
-
-                        acquired.Dispose();
-                    });
-                lease = null;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception exception)
-            {
-                // A failed offscreen warm-up must never mark a visible
-                // tile as failed. The actual tile retains its retry
-                // and user-facing error handling when it appears.
-                System.Diagnostics.Trace.TraceWarning(
-                    "Viewer lookahead bitmap preparation failed: {0}",
-                    exception);
-                break;
-            }
-            finally
-            {
-                if (lease is not null)
+                cancellationToken.ThrowIfCancellationRequested();
+                var offset = Interlocked.Increment(ref nextOffset);
+                if (offset >= count)
                 {
-                    var orphan = lease;
-                    await Dispatcher.UIThread.InvokeAsync(
-                        orphan.Dispose);
+                    return;
                 }
+
+                await PredecodeOneTileAsync(
+                    session,
+                    startIndex + offset,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (count <= 0)
+        {
+            return;
+        }
+
+        if (count == 1)
+        {
+            await WorkerAsync().ConfigureAwait(false);
+            return;
+        }
+
+        await Task.WhenAll(WorkerAsync(), WorkerAsync())
+            .ConfigureAwait(false);
+    }
+
+    private async Task PredecodeOneTileAsync(
+        ViewerSession session,
+        long index,
+        CancellationToken cancellationToken)
+    {
+        DecodedBitmapLease? lease = null;
+        try
+        {
+            var asset = await session.GetAssetAsync(
+                index, cancellationToken).ConfigureAwait(false);
+            var thumbnail = await session.GetThumbnailAsync(
+                asset,
+                ViewerThumbnailPriority.Background,
+                cancellationToken).ConfigureAwait(false);
+            lease = await session.BitmapCache.AcquireAsync(
+                thumbnail,
+                cancellationToken).ConfigureAwait(false);
+
+            // A decoded resident and its lightweight descriptor must
+            // become available together on the UI dispatcher.
+            var acquired = lease;
+            await Dispatcher.UIThread.InvokeAsync(
+                () =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (ReferenceEquals(_session, session))
+                    {
+                        RememberWarmPresentation(
+                            index,
+                            asset,
+                            thumbnail);
+                        Interlocked.Increment(
+                            ref _lookaheadBitmapsPredecoded);
+                    }
+
+                    acquired.Dispose();
+                });
+            lease = null;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            // A failed/offline background tile must not abort unrelated
+            // warm workers or mark foreground tiles as failed.
+            Trace.TraceWarning(
+                "Viewer lookahead bitmap preparation failed: {0}",
+                exception);
+        }
+        finally
+        {
+            if (lease is not null)
+            {
+                var orphan = lease;
+                await Dispatcher.UIThread.InvokeAsync(
+                    orphan.Dispose);
             }
         }
     }
