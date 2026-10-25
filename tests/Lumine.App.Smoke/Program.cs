@@ -14426,6 +14426,70 @@ try
                             StringComparison.Ordinal),
                         "User-visible runtime diagnostics omitted the product-default memory-only policy/cache state.");
 
+                    if (iteration == 2)
+                    {
+                        // #737: Replacing a Library runtime, not only
+                        // closing MainWindow, must drain a real manual
+                        // reconcile before disposing its SQLite owner.
+                        var switchRescanEntered =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        var releaseSwitchRescan =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        window.RescanAfterReconcileForSmokeAsync = async () =>
+                        {
+                            switchRescanEntered.TrySetResult(true);
+                            await releaseSwitchRescan.Task;
+                        };
+
+                        Task? pendingSwitch = null;
+                        Task? pendingSwitchRescan = null;
+                        try
+                        {
+                            pendingSwitchRescan =
+                                window.RescanActiveLibraryForSmokeAsync();
+                            await switchRescanEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.RescanAfterReconcileForSmokeAsync = null;
+
+                            pendingSwitch =
+                                window.OpenLibraryAsync(repeatedEmptyLibraryRoot);
+                            for (var switchDrainAttempt = 0;
+                                 switchDrainAttempt < 10;
+                                 switchDrainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                !pendingSwitch.IsCompleted
+                                && !pendingSwitchRescan.IsCompleted,
+                                "Library switch disposed a runtime before its active manual SQLite rescan callback finished.");
+                        }
+                        finally
+                        {
+                            window.RescanAfterReconcileForSmokeAsync = null;
+                            releaseSwitchRescan.TrySetResult(true);
+                        }
+
+                        await pendingSwitchRescan!;
+                        await pendingSwitch!;
+                        Require(
+                            window.CurrentRuntime is not null
+                            && window.CurrentShell is null
+                            && window.ProductShellState == "EmptyLibrary",
+                            "Library switch failed after safely draining manual SQLite reconciliation.");
+
+                        await window.OpenLibraryAsync(repeatedLibraryRoot);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.CurrentRuntime is not null
+                            && window.CurrentShell is not null
+                            && window.ProductShellState == "Workspace",
+                            "Reopening after a drained manual rescan lost the active Viewer runtime.");
+                    }
+
                     var detail =
                         window.CurrentShell!.DetailViewer;
                     await detail.SelectAsync(0);
