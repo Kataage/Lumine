@@ -303,6 +303,27 @@ Require(
 
 try
 {
+    // Validate the forensic tool against a KNOWN live file holder before
+    // relying on its output during an intermittent SQLite cleanup failure.
+    // This runs outside the original timed navigation/SQLite gates.
+    var knownLockPath =
+        Path.Combine(root, "known-restart-manager-owner.lock");
+    File.WriteAllText(knownLockPath, "lock-owner-probe");
+    using (var heldLock = new FileStream(
+        knownLockPath,
+        FileMode.Open,
+        FileAccess.ReadWrite,
+        FileShare.None))
+    {
+        var reportedOwners =
+            WindowsFileLockOwnerProbe.GetOwners(knownLockPath);
+        Require(
+            reportedOwners.Any(owner =>
+                owner.ProcessId == Environment.ProcessId),
+            "Windows Restart Manager failed to identify the known App Smoke process holding a test file; its attribution cannot be trusted.");
+    }
+    File.Delete(knownLockPath);
+
     var acceptanceParse =
         RealLibraryAcceptanceOptions.Parse(
         [
@@ -15139,8 +15160,15 @@ finally
                         probe = $"exclusive-open-denied(0x{denied.HResult:X8})";
                     }
 
+                    var ownerDetails =
+                        probe.StartsWith(
+                            "exclusive-open-locked",
+                            StringComparison.Ordinal)
+                            ? WindowsFileLockOwnerProbe.DescribeOwners(
+                                remainingDb)
+                            : "not-queried";
                     databaseFileProbes.Add(
-                        $"{Path.GetRelativePath(root, remainingDb)}={probe}");
+                        $"{Path.GetRelativePath(root, remainingDb)}={probe}; owners=[{ownerDetails}]");
                 }
             }
             catch (IOException enumerationFailure)
