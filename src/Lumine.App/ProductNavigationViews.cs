@@ -1040,8 +1040,9 @@ internal static class ProductNavigationViews
             createName,
             "新しいタグの名前");
 
-        var colorEditor =
-            new TagColorEditor();
+        // Avoid building a full ColorPicker while Tags are only browsed.
+        TagColorEditor? colorEditor = null;
+        var colorEditorHost = new ContentControl();
 
         var createAction =
             LumineDesign.ConfigurePrimaryButton(
@@ -1092,7 +1093,7 @@ internal static class ProductNavigationViews
         createBody.Children.Add(
             createName);
         createBody.Children.Add(
-            colorEditor);
+            colorEditorHost);
         createBody.Children.Add(
             createActions);
 
@@ -1146,7 +1147,7 @@ internal static class ProductNavigationViews
                 createFlyout.IsOpen
                 && !string.IsNullOrWhiteSpace(
                     createName.Text)
-                && colorEditor.IsColorValid;
+                && colorEditor?.IsColorValid == true;
         }
 
         void UpdateToolbar()
@@ -1422,9 +1423,10 @@ internal static class ProductNavigationViews
                         AutomationProperties.SetName(
                             editName,
                             "編集するタグの名前");
-                        var editColor =
-                            new TagColorEditor(
-                                tag.Color);
+                        // A virtualized Edit row does not need a ColorPicker
+                        // until its own Flyout is actually opened.
+                        TagColorEditor? editColor = null;
+                        var editColorHost = new ContentControl();
                         var editStatus =
                             new TextBlock
                             {
@@ -1492,7 +1494,7 @@ internal static class ProductNavigationViews
                         editBody.Children.Add(
                             editName);
                         editBody.Children.Add(
-                            editColor);
+                            editColorHost);
                         editBody.Children.Add(
                             editStatus);
                         editBody.Children.Add(
@@ -1517,19 +1519,30 @@ internal static class ProductNavigationViews
                                 && !editBusy
                                 && !string.IsNullOrWhiteSpace(
                                     editName.Text)
-                                && editColor.IsColorValid;
+                                && editColor?.IsColorValid == true;
                             cancelEdit.IsEnabled =
                                 !editBusy;
                             editName.IsEnabled =
                                 !editBusy;
-                            editColor.IsEnabled =
-                                !editBusy;
+                            if (editColor is not null)
+                            {
+                                editColor.IsEnabled = !editBusy;
+                            }
                         }
 
                         Control? editPreviousOwnerFocus = null;
                         editFlyout.Opened +=
                             (_, _) =>
                             {
+                                if (editColor is null)
+                                {
+                                    editColor = new TagColorEditor(
+                                        tag.Color);
+                                    editColor.StateChanged +=
+                                        (_, _) => UpdateEditActionState();
+                                    editColorHost.Content = editColor;
+                                }
+
                                 editPreviousOwnerFocus =
                                     TopLevel.GetTopLevel(edit)
                                         ?.FocusManager
@@ -1559,9 +1572,6 @@ internal static class ProductNavigationViews
                         editName.TextChanged +=
                             (_, _) =>
                                 UpdateEditActionState();
-                        editColor.StateChanged +=
-                            (_, _) =>
-                                UpdateEditActionState();
                         cancelEdit.Click +=
                             (_, _) =>
                             {
@@ -1576,7 +1586,7 @@ internal static class ProductNavigationViews
                                 var updatedName =
                                     editName.Text?.Trim();
                                 var updatedColor =
-                                    editColor.SelectedColor;
+                                    editColor?.SelectedColor;
                                 if (string.IsNullOrWhiteSpace(
                                         updatedName)
                                     || updatedColor is null
@@ -1688,6 +1698,14 @@ internal static class ProductNavigationViews
         createFlyout.Opened +=
             (_, _) =>
             {
+                if (colorEditor is null)
+                {
+                    colorEditor = new TagColorEditor();
+                    colorEditor.StateChanged +=
+                        (_, _) => UpdateCreateActionState();
+                    colorEditorHost.Content = colorEditor;
+                }
+
                 createPreviousOwnerFocus =
                     TopLevel.GetTopLevel(add)
                         ?.FocusManager
@@ -1712,15 +1730,12 @@ internal static class ProductNavigationViews
             {
                 createName.Text =
                     string.Empty;
-                colorEditor.Reset();
+                colorEditor?.Reset();
                 createFlyout.Hide();
                 UpdateCreateActionState();
             };
 
         createName.TextChanged +=
-            (_, _) =>
-                UpdateCreateActionState();
-        colorEditor.StateChanged +=
             (_, _) =>
                 UpdateCreateActionState();
 
@@ -1734,7 +1749,7 @@ internal static class ProductNavigationViews
                         var name =
                             createName.Text?.Trim();
                         var color =
-                            colorEditor.SelectedColor;
+                            colorEditor?.SelectedColor;
                         if (string.IsNullOrWhiteSpace(
                                 name)
                             || color is null)
@@ -1747,7 +1762,7 @@ internal static class ProductNavigationViews
                             color);
                         createName.Text =
                             string.Empty;
-                        colorEditor.Reset();
+                        colorEditor?.Reset();
                         createFlyout.Hide();
                     },
                     reportError);
