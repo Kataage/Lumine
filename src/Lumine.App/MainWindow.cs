@@ -653,6 +653,33 @@ public sealed class MainWindow : Window
     internal IReadOnlyList<PublicationDestinationInfo>
         PublicationDestinationsForSmoke => _publicationDestinations;
 
+    // #737 mounted close-race: exercise the real catalog SQLite update
+    // without disabling the open Viewer. An already-enabled library is
+    // passed as a disabled candidate so the mutation is an idempotent
+    // enable; production's wrapper/close-drain path is otherwise exact.
+    internal Task RefreshEnabledLibraryRegistrationForSmokeAsync()
+    {
+        var runtime = _runtime
+            ?? throw new InvalidOperationException(
+                "A mounted library is required.");
+        return ToggleLibraryEnabledAsync(
+            new LibraryCatalogItem(
+                runtime.Library.Id,
+                runtime.Library.Name,
+                runtime.LibraryRoot,
+                false,
+                LibraryScanState.Complete,
+                runtime.AssetCount,
+                null,
+                null));
+    }
+
+    internal Func<Task>? LibraryCatalogBeforeCommitForSmokeAsync
+    {
+        get;
+        set;
+    }
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
@@ -2632,10 +2659,19 @@ public sealed class MainWindow : Window
             library);
     }
 
-    private async Task ToggleLibraryEnabledAsync(
+    private Task ToggleLibraryEnabledAsync(
+        LibraryCatalogItem library) =>
+        RunTrackedNavigationMutationAsync(
+            () => ToggleLibraryEnabledCoreAsync(library));
+
+    private async Task ToggleLibraryEnabledCoreAsync(
         LibraryCatalogItem library)
     {
         await _navigationInitialization;
+        if (_closeStarted)
+        {
+            return;
+        }
 
         if (library.IsEnabled
             && _runtime?.Library.Id == library.Id)
@@ -2644,10 +2680,29 @@ public sealed class MainWindow : Window
                 "ライブラリを無効化しました。");
         }
 
+        // Runtime detachment above can yield to a concurrent window
+        // close. Do not begin a second catalog SQLite write afterward.
+        if (_closeStarted)
+        {
+            return;
+        }
+
         var changed =
             await _navigationLibraryService.SetLibraryEnabledAsync(
                 library.Id,
                 !library.IsEnabled);
+
+        if (LibraryCatalogBeforeCommitForSmokeAsync is { } commitBarrier)
+        {
+            await commitBarrier();
+        }
+
+        // A late catalog write must not mutate the view or schedule a new
+        // SQLite navigation query once the owner has started closing.
+        if (_closeStarted)
+        {
+            return;
+        }
 
         if (!changed)
         {
@@ -2664,6 +2719,10 @@ public sealed class MainWindow : Window
         LibraryCatalogItem library)
     {
         await _navigationInitialization;
+        if (_closeStarted)
+        {
+            return;
+        }
 
         var confirmed =
             await ProductDialogs.ConfirmAsync(
@@ -2673,21 +2732,41 @@ public sealed class MainWindow : Window
                 "元画像ファイルは削除しません。このライブラリに紐づくLumine側の登録情報は解除されます。",
                 confirmLabel: "登録解除",
                 tone: ProductDialogTone.Danger);
-        if (!confirmed)
+        if (!confirmed || _closeStarted)
         {
             return;
         }
 
+        // Do not retain an unanswered confirmation dialog as a shutdown
+        // barrier. Own the complete confirmed SQLite/runtime mutation
+        // through the same close-drained tracker as Tag operations.
+        await RunTrackedNavigationMutationAsync(
+            () => RemoveLibraryConfirmedAsync(library));
+    }
+
+    private async Task RemoveLibraryConfirmedAsync(
+        LibraryCatalogItem library)
+    {
         if (_runtime?.Library.Id == library.Id)
         {
             await CloseActiveLibraryAsync(
                 "ライブラリの登録を解除しました。");
         }
 
+        if (_closeStarted)
+        {
+            return;
+        }
+
         var removed =
             await _navigationLibraryService
                 .RemoveLibraryRegistrationAsync(
                     library.Id);
+
+        if (_closeStarted)
+        {
+            return;
+        }
 
         _status.Foreground =
             removed
