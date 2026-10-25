@@ -60,6 +60,11 @@ public sealed class MainWindow : Window
     // Cancel them on close and drain their complete Task before disposing
     // the active Viewer runtime and its database connections.
     private readonly HashSet<CancellationTokenSource> _rescanCancellations = [];
+    // A library switch can dispose the old runtime independently of
+    // MainWindow closing. Drain these specific Tasks before replacing it;
+    // awaiting the entire navigation set here would deadlock catalog
+    // mutations that themselves invoke DisposeCurrentRuntimeAsync.
+    private readonly HashSet<Task> _rescanInFlight = [];
     private Window? _diagnosticsWindow;
     private WindowState? _lightboxPreviousWindowState;
     private bool _lightboxFullScreen;
@@ -2539,10 +2544,21 @@ public sealed class MainWindow : Window
             library.RootPath);
     }
 
-    private Task RescanLibraryAsync(
-        LibraryCatalogItem library) =>
-        RunTrackedNavigationMutationAsync(
+    private async Task RescanLibraryAsync(
+        LibraryCatalogItem library)
+    {
+        var operation = RunTrackedNavigationMutationAsync(
             () => RescanLibraryCoreAsync(library));
+        _rescanInFlight.Add(operation);
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            _rescanInFlight.Remove(operation);
+        }
+    }
 
     private async Task RescanLibraryCoreAsync(
         LibraryCatalogItem library)
@@ -5028,6 +5044,32 @@ public sealed class MainWindow : Window
 
     private async Task DisposeCurrentRuntimeAsync()
     {
+        // The manual sync query has its own SQLite mutation gate and is not
+        // joined by WindowsLibrarySyncSession.DisposeAsync. Cancel and join
+        // before the old runtime can be detached on library switch, disable
+        // or window close. Never await all _navigationInFlight here: a
+        // tracked library-catalog operation can itself call this method.
+        foreach (var rescanCancellation in _rescanCancellations.ToArray())
+        {
+            rescanCancellation.Cancel();
+        }
+
+        try
+        {
+            await Task.WhenAll(_rescanInFlight.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            // The initiating UI callback reports the failed scan; the
+            // runtime switch still must dispose the old database safely.
+            _host?.Log.Write(
+                "library",
+                $"Manual rescan drain completed with error: {exception.Message}");
+        }
+
         var shell = _shell;
         var runtime = _runtime;
 
