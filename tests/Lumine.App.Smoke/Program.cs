@@ -14443,8 +14443,10 @@ try
                     TaskCompletionSource<bool>? releaseNavigation = null;
                     TaskCompletionSource<bool>? releasePublication = null;
                     TaskCompletionSource<bool>? releaseCatalog = null;
+                    TaskCompletionSource<bool>? releaseRescan = null;
                     Task? directNavigationTask = null;
                     Task? pendingCatalog = null;
+                    Task? pendingRescan = null;
                     Task<PublicationDestinationInfo?>? pendingPublication = null;
                     try
                     {
@@ -14532,6 +14534,29 @@ try
                             await catalogEntered.Task.WaitAsync(
                                 TimeSpan.FromSeconds(10));
                             window.LibraryCatalogBeforeCommitForSmokeAsync = null;
+
+                            // After an actual filesystem + SQLite reconcile,
+                            // suspend before its UI continuation. A close
+                            // cancels any active scan but MUST also await
+                            // this already-finished SQL callback. It is an
+                            // independent owner from Catalog and Publication.
+                            var rescanEntered =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            releaseRescan =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            var releaseForRescan = releaseRescan;
+                            window.RescanAfterReconcileForSmokeAsync = async () =>
+                            {
+                                rescanEntered.TrySetResult(true);
+                                await releaseForRescan.Task;
+                            };
+                            pendingRescan =
+                                window.RescanActiveLibraryForSmokeAsync();
+                            await rescanEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.RescanAfterReconcileForSmokeAsync = null;
                         }
 
                         window.Close();
@@ -14562,6 +14587,24 @@ try
                             Require(
                                 window.IsVisible && pendingCatalog is { IsCompleted: false },
                                 "MainWindow closed while a library-catalog SQLite mutation still owned an unfinished callback.");
+
+                            // Now release Catalog as well. The completed
+                            // reconciliation is still suspended, so the
+                            // window must not close early even though all
+                            // other explicitly held database tasks drained.
+                            releaseCatalog!.TrySetResult(true);
+                            await pendingCatalog!;
+                            for (var rescanDrainAttempt = 0;
+                                 rescanDrainAttempt < 10;
+                                 rescanDrainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                window.IsVisible
+                                && pendingRescan is { IsCompleted: false },
+                                "MainWindow closed before the in-flight library rescan callback completed.");
                         }
                         if (releaseNavigation is not null)
                         {
@@ -14583,14 +14626,21 @@ try
                         window.NavigationBeforeCommitForSmokeAsync = null;
                         window.PublicationBeforeCommitForSmokeAsync = null;
                         window.LibraryCatalogBeforeCommitForSmokeAsync = null;
+                        window.RescanAfterReconcileForSmokeAsync = null;
                         releaseNavigation?.TrySetResult(true);
                         releasePublication?.TrySetResult(true);
                         releaseCatalog?.TrySetResult(true);
+                        releaseRescan?.TrySetResult(true);
                     }
 
                     if (pendingCatalog is not null)
                     {
                         await pendingCatalog;
+                    }
+
+                    if (pendingRescan is not null)
+                    {
+                        await pendingRescan;
                     }
 
                     if (pendingPublication is not null)
