@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -166,6 +167,8 @@ public sealed class DetailViewerControl : UserControl
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
+
+        UpdateZoomCommandStates();
 
         var toolbar = new StackPanel
         {
@@ -1085,6 +1088,7 @@ public sealed class DetailViewerControl : UserControl
     private void SetZoom(double zoom)
     {
         _zoom = zoom;
+        UpdateZoomCommandStates();
 
         var snapshot = _session.Snapshot;
         if (snapshot.Bitmap is null)
@@ -1108,6 +1112,35 @@ public sealed class DetailViewerControl : UserControl
         Dispatcher.UIThread.Post(
             UpdatePanAffordance,
             DispatcherPriority.Render);
+    }
+
+    // Keep display-mode feedback in sync with both pointer and keyboard zoom.
+    // Color alone is not sufficient, so active buttons also have a heavier
+    // label and an accessible selected-state name. Free zoom leaves both off.
+    private void UpdateZoomCommandStates()
+    {
+        var fitSelected = _fitMode;
+        var actualSelected = !_fitMode && Math.Abs(_zoom - 1) < 0.001;
+
+        _fit.Background = fitSelected
+            ? ViewerVisualTokens.SelectedSurface
+            : Brushes.Transparent;
+        _fit.FontWeight = fitSelected ? FontWeight.SemiBold : FontWeight.Normal;
+        AutomationProperties.SetName(
+            _fit,
+            fitSelected
+                ? "ウィンドウに合わせる (0)・選択中"
+                : "ウィンドウに合わせる (0)");
+
+        _actual.Background = actualSelected
+            ? ViewerVisualTokens.SelectedSurface
+            : Brushes.Transparent;
+        _actual.FontWeight = actualSelected ? FontWeight.SemiBold : FontWeight.Normal;
+        AutomationProperties.SetName(
+            _actual,
+            actualSelected
+                ? "100%表示・選択中"
+                : "100%表示");
     }
 
     private double SliderFromZoom(
@@ -1471,6 +1504,7 @@ public sealed class DetailViewerControl : UserControl
         }
 
         _fitMode = true;
+        UpdateZoomCommandStates();
         Dispatcher.UIThread.Post(
             CenterViewport,
             DispatcherPriority.Render);
@@ -2072,6 +2106,26 @@ public sealed class DetailViewerControl : UserControl
             _zoomIn.Background,
             Brushes.Transparent);
 
+
+    internal bool FitCommandSelectedForSmoke =>
+        ReferenceEquals(_fit.Background, ViewerVisualTokens.SelectedSurface)
+        && _fit.FontWeight == FontWeight.SemiBold
+        && AutomationProperties.GetName(_fit)?.EndsWith(
+            "選択中", StringComparison.Ordinal) == true;
+
+    internal bool ActualSizeCommandSelectedForSmoke =>
+        ReferenceEquals(_actual.Background, ViewerVisualTokens.SelectedSurface)
+        && _actual.FontWeight == FontWeight.SemiBold
+        && AutomationProperties.GetName(_actual)?.EndsWith(
+            "選択中", StringComparison.Ordinal) == true;
+
+    internal bool UnselectedZoomCommandsForSmoke =>
+        ReferenceEquals(_fit.Background, Brushes.Transparent)
+        && ReferenceEquals(_actual.Background, Brushes.Transparent)
+        && _fit.FontWeight == FontWeight.Normal
+        && _actual.FontWeight == FontWeight.Normal
+        && AutomationProperties.GetName(_fit) == "ウィンドウに合わせる (0)"
+        && AutomationProperties.GetName(_actual) == "100%表示";
 
     internal bool HasPanCursorForSmoke =>
         !ReferenceEquals(
