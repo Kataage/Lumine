@@ -6,6 +6,42 @@ using Lumine.Viewer;
 Console.WriteLine($"{FoundationInfo.ProductName} architecture v{FoundationInfo.ArchitectureVersion}");
 Console.WriteLine(FoundationInfo.RuntimeDescription);
 
+// These are byte/entry ceilings, not preallocated RAM. The product
+// defaults must be genuinely GiB-scale and must be internally usable:
+// increasing only the byte budget while keeping the old 96-entry cap
+// would leave most of the native Bitmap cache unreachable.
+const defaultPolicy = CoreResourcePolicy.Resolve(processorCount: 8);
+const gib = 1024L * 1024 * 1024;
+if (defaultPolicy.DecodedThumbnailByteLimit < gib
+    || defaultPolicy.EncodedThumbnailMemoryByteLimit < gib
+    || defaultPolicy.DecodedThumbnailEntryLimit < 2048
+    || defaultPolicy.DecodedThumbnailEntryLimit
+        > CoreResourcePolicy.MaxDecodedThumbnailEntryLimit
+    || defaultPolicy.DecodedThumbnailByteLimit
+        > CoreResourcePolicy.MaxDecodedThumbnailByteLimit
+    || defaultPolicy.EncodedThumbnailMemoryByteLimit
+        > CoreResourcePolicy.MaxEncodedThumbnailMemoryByteLimit)
+{
+    throw new InvalidOperationException(
+        "Default thumbnail byte/entry budgets are not bounded GiB-scale.");
+}
+
+var overridden = CoreResourcePolicy.Resolve(
+    new ResourcePolicySettings
+    {
+        DecodedThumbnailByteLimit = 128L * 1024 * 1024,
+        DecodedThumbnailEntryLimit = 48,
+        EncodedThumbnailMemoryByteLimit = 256L * 1024 * 1024
+    },
+    processorCount: 8);
+if (overridden.DecodedThumbnailByteLimit != 128L * 1024 * 1024
+    || overridden.DecodedThumbnailEntryLimit != 48
+    || overridden.EncodedThumbnailMemoryByteLimit != 256L * 1024 * 1024)
+{
+    throw new InvalidOperationException(
+        "Explicit user cache limits were overwritten by new defaults.");
+}
+
 var resourcePolicy = CoreResourcePolicy.Resolve(
     new ResourcePolicySettings
     {
