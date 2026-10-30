@@ -32,24 +32,24 @@ public sealed record CoreResourcePolicy
     public const int MaxThumbnailWorkerCount = 8;
     public const int MaxThumbnailQueueCapacity = 4096;
     public const int MaxThumbnailForegroundBurst = 64;
-    public const int MaxDecodedThumbnailEntryLimit = 512;
-    public const long MaxDecodedThumbnailByteLimit = 1024L * 1024 * 1024;
+    public const int MaxDecodedThumbnailEntryLimit = 4096;
+    public const long MaxDecodedThumbnailByteLimit = 2L * 1024 * 1024 * 1024;
     public const int MaxDetailPreviewEntryLimit = 32;
     public const long MaxDetailPreviewByteLimit = 1024L * 1024 * 1024;
     public const long MaxDetailOriginalByteLimit = 2L * 1024 * 1024 * 1024;
     public const long MaxThumbnailCacheByteLimit = 256L * 1024 * 1024 * 1024;
-    public const long MaxEncodedThumbnailMemoryByteLimit = 2L * 1024 * 1024 * 1024;
+    public const long MaxEncodedThumbnailMemoryByteLimit = 4L * 1024 * 1024 * 1024;
     public const long MaxVipsTrackedMemoryLimitBytes = 512L * 1024 * 1024;
 
     private const int DefaultThumbnailQueueCapacity = 256;
     private const int DefaultThumbnailForegroundBurst = 8;
-    private const int DefaultDecodedThumbnailEntryLimit = 96;
-    private const long DefaultDecodedThumbnailByteLimit = 96L * 1024 * 1024;
+    private const int DefaultDecodedThumbnailEntryLimit = 2048;
+    private const long DefaultDecodedThumbnailByteLimit = 1024L * 1024 * 1024;
     private const int DefaultDetailPreviewEntryLimit = 4;
     private const long DefaultDetailPreviewByteLimit = 48L * 1024 * 1024;
     private const long DefaultDetailOriginalByteLimit = 256L * 1024 * 1024;
     private const long DefaultThumbnailCacheByteLimit = 8L * 1024 * 1024 * 1024;
-    private const long DefaultEncodedThumbnailMemoryByteLimit = 256L * 1024 * 1024;
+    private const long DefaultEncodedThumbnailMemoryByteLimit = 1024L * 1024 * 1024;
     private const long DefaultVipsTrackedMemoryLimitBytes = 64L * 1024 * 1024;
 
     private CoreResourcePolicy(
