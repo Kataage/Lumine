@@ -13183,6 +13183,14 @@ try
                                              != (window.CurrentShell.Bounds.Width < 1600)
                                          || window.CurrentShell.ContextSurfaceBounds.Width
                                              is < 300 or > 380
+                                         || !window.CurrentShell
+                                             .InspectorOpensWithoutAnimationForSmoke
+                                         || window.CurrentShell
+                                             .InspectorVisualBoundsInShellForSmoke.Left < -0.5
+                                         || Math.Abs(
+                                             window.CurrentShell
+                                                 .InspectorVisualBoundsInShellForSmoke.Right
+                                             - window.CurrentShell.Bounds.Width) >= 1
                                          || window.CurrentShell.ContextDetail
                                              .IsCompactPresentationForSmoke
                                              != (window.CurrentShell.Bounds.Width < 1600)
@@ -13246,6 +13254,14 @@ try
                                         == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.ContextSurfaceBounds.Width
                                         is >= 300 and <= 380
+                                    && window.CurrentShell
+                                        .InspectorOpensWithoutAnimationForSmoke
+                                    && window.CurrentShell
+                                        .InspectorVisualBoundsInShellForSmoke.Left >= -0.5
+                                    && Math.Abs(
+                                        window.CurrentShell
+                                            .InspectorVisualBoundsInShellForSmoke.Right
+                                        - window.CurrentShell.Bounds.Width) < 1
                                     && window.CurrentShell.ContextDetail
                                         .IsCompactPresentationForSmoke
                                         == (window.CurrentShell.Bounds.Width < 1600)
@@ -13277,6 +13293,8 @@ try
                                     $"visible={window.CurrentShell.IsContextDetailVisible}, " +
                                     $"compact={window.CurrentShell.IsCompactInspectorLayout}, " +
                                     $"surfaceWidth={window.CurrentShell.ContextSurfaceBounds.Width:F1}, " +
+                                    $"visualDrawer={window.CurrentShell.InspectorVisualBoundsInShellForSmoke}, " +
+                                    $"noSlide={window.CurrentShell.InspectorOpensWithoutAnimationForSmoke}, " +
                                     $"gridWidth={window.CurrentShell.GridViewerBounds.Width:F1}, " +
                                     $"closedGridWidth={unpinnedClosedCanvasWidth:F1}, " +
                                     $"previewHeight={window.CurrentShell.ContextDetail.PreviewHeightForSmoke:F1}, " +
@@ -13293,8 +13311,12 @@ try
                                 {
                                     Require(
                                         window.CurrentShell.InspectorEdgeDrawerForSmoke
-                                        && window.CurrentShell.InspectorSlideInConfiguredForSmoke,
-                                        "Inspector did not dock flush to top/bottom/right or did not configure right-edge slide-in.");
+                                        && window.CurrentShell.InspectorOpensWithoutAnimationForSmoke
+                                        && Math.Abs(
+                                            window.CurrentShell
+                                                .InspectorVisualBoundsInShellForSmoke.Right
+                                            - window.CurrentShell.Bounds.Width) < 1,
+                                        "Inspector was clipped off the right edge or delayed by an entrance transition.");
                                 }
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
