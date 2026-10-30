@@ -570,3 +570,11 @@ There must be no deferred entrance transition. Keep the original
 screenshots' artifact names so CI before/after can be compared and
 preserve all Viewer first-raster/SQLite/NativeAOT hard gates. Actual
 physical Windows owner UX approval is still required before #635 closes.
+
+### Stage 3V — Focused Viewer explicit zoom-mode feedback (2026-10-30, Issue #540)
+
+**Evidence:** Windows Skia `focused-viewer-900x600-text225.png` from the first-attempt merged PR #770 visual evidence shows Fit, 1:1 and free-zoom controls within a compact single chrome band. Code review of `DetailViewerControl` found that, despite these two commands changing the image mode correctly, neither Fit nor 1:1 exposed its current selection to the user. The percentage label alone cannot distinguish fitted display from a manually chosen zoom and a first-time user cannot confidently tell which command is active.
+
+**Decision:** Keep the existing image-first, single-band compact chrome, direct Fit/1:1 commands and accelerators. Use the shared selected-surface token plus semibold label to distinguish the active mode **without relying on color alone**. Give the active button an accessible name explicitly ending in `選択中`. When the user zooms freely above/below 1:1, neither mode is selected; when the user returns to exact source-pixel 1:1, 1:1 is selected. Reset the affordance when a new image starts loading, preserving Fit as the default. Do not add a new toolbar row, resize image canvas, alter decode/bitmap caching, change focus ownership, or shift performance thresholds.
+
+**Regression acceptance:** Mounted `Lumine.Viewer.Smoke` must demonstrate visible and accessible Fit selection, explicit 1:1 selection after original-resolution promotion, and both controls unselected after 2x free zoom. All existing 900x600/225% chrome geometry, keyboard/wheel commands, 10k/100k first raster, NativeAOT and strict Windows gates remain unchanged. This is a narrow, code-grounded #540 follow-up; it does **not** establish complete Inspector/Focused Viewer polish or holistic #635 owner acceptance.
