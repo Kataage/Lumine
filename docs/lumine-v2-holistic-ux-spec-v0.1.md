@@ -535,3 +535,38 @@ The Inspector's **制作** tab previously always rendered three generic cards (`
 **Correction:** When an unhandled Ctrl+F is permitted to target Browse, dismiss **only the visible transient navigation overlay** through its existing light-dismiss method with `restoreRailFocus: false` before focusing/selecting Search. Retain the existing Ctrl+F guard for Focused Viewer and non-workspace Settings/pages, preserve real keyboard ownership for already-handled events, and do not collapse a deliberately pinned wide sidebar. No new navigation control, duplicate Search field, data request, selection reset, redraw pipeline or resource/performance budget changes.
 
 **Acceptance:** Extend the existing mounted MainWindow keyboard App Smoke: first verify the established Ctrl+F from a selected thumbnail and Window key route; then resize the same real workspace to 900×600, open its compact navigation, focus the live overlay Close button, raise **routed Ctrl+F from that button**, and require handled event, dismissed overlay, effectively visible focused **existing Browse Search TextBox**, and preserved thumbnail selection. Restore original window size; keep existing popover focus and viewport matrix checks. Preserve strict Windows App/visual/225%-text, native first-Skia-raster Grid/List 10k/100k scrolling, Library/Image/BMP/fs performance, NativeAOT/Portable and Windows PowerShell real-library gates without threshold changes. Issue #635 stays OPEN pending final consolidated physical owner UX acceptance; #634 stays OPEN for physical GPU scrolling acceptance; do not request intermediate device checks.
+
+
+### Stage 3U — Inspector immediate, fully on-canvas opening (2026-10-30, Issue #635)
+
+**Observed in actual first-party headless Windows Skia screenshot evidence** from
+[merged develop CI #41011178707](https://github.com/Kataage/Lumine/actions/runs/41011178707/artifacts/12957642639):
+`inspector-900x600.png`, `inspector-900x600-text225.png` and
+`inspector-1440x900-drawer.png` show the Inspector's right-side controls
+clipped beyond the window boundary. This was **not proof that the settled layout
+was permanently too narrow**: source review found a deliberate 200ms
+`TransformOperationsTransition` on `CoreViewerShell.ShowContextDetailAsync`
+that staged the existing detail editor `Width + 2` DIPs off the right edge,
+and then animated its transform back to zero. The screenshot capture test
+waited for `Bounds.Width`, preview and footer state, **but never checked the
+actual transformed visual position**. It could therefore capture intermediate
+frames in which rating, tags and lower-right actions were interactable but
+partially off-screen. This also adds a noticeable artificial delay to a
+frequent Browse → Inspector action.
+
+**Decision:** the Inspector is a work surface, not decorative motion. Show
+the same persistent detail editor immediately at right-edge transform zero,
+without an opening animation or a new thumbnail/image request. Preserve
+pinned-wide/overlay-compact geometry, selection, all four Inspector tabs,
+scroll, keyboard focus, focused-viewer return and visual state. The gallery
+does not resize or shift for an unpinned Inspector.
+
+**Strict new acceptance:** the mounted App smoke must measure the
+*transformed visual* Inspector rectangle inside `CoreViewerShell`, not
+only the untransformed `Border.Bounds`. When visible, its entire width
+must start inside the shell and its right edge must coincide with the
+shell's right edge within 1 DIP, at 900x600/1440x900 and 100/225% text.
+There must be no deferred entrance transition. Keep the original
+screenshots' artifact names so CI before/after can be compared and
+preserve all Viewer first-raster/SQLite/NativeAOT hard gates. Actual
+physical Windows owner UX approval is still required before #635 closes.
