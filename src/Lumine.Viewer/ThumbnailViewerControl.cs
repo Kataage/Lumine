@@ -143,7 +143,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     internal static int ResolveWarmPresentationDescriptorLimitForSmoke(
         int decodedEntryLimit) =>
-        (int)Math.Clamp((long)decodedEntryLimit * 2, 16, 1024);
+        (int)Math.Clamp((long)decodedEntryLimit * 2, 16, 8192);
 
     public ThumbnailViewerControl(
         ViewerSession session,
@@ -2534,6 +2534,18 @@ public sealed class ThumbnailViewerControl : UserControl
         // reversing one wheel tick does not expose another cold edge.
         // Keep the old far-seek near-row count exactly as validated by
         // Grid/List strict first-raster CI.
+        // A larger cache is a *retention* budget, not permission to
+        // predecode thousands of cold files on initial window attach.
+        // Keep normal lookahead within three viewports per scheduling
+        // pass; previously displayed rows remain in the larger LRU and
+        // are reused as scrolling advances. Far-seek bounds stay intact.
+        if (adaptive)
+        {
+            availableRows = Math.Min(
+                availableRows,
+                (int)Math.Min(96L, 3L * visibleRows));
+        }
+
         var reverseGoal = Math.Min(
             oppositeSourceRows, isList ? 2 : 1);
         var reverseRows = availableRows >= 2
