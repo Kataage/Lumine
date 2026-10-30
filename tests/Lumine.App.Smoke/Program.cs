@@ -4946,6 +4946,44 @@ try
                                 "評価 ",
                                 StringComparison.Ordinal))
                     .ToArray();
+            // A rating must remain readable without color: chosen stars
+            // have a filled silhouette, remaining stars an outline, and
+            // exactly the current value has an accessible selected name.
+            bool RatingStarsMatch(int currentRating) =>
+                directRatingButtons
+                    .Select(
+                        (button, index) =>
+                        {
+                            var rating = index + 1;
+                            var expectedName =
+                                rating == currentRating
+                                    ? $"評価 {rating}（選択中、再度押すと解除）"
+                                    : $"評価 {rating}";
+                            if (button.Content
+                                is not Avalonia.Controls.Shapes.Path glyph)
+                            {
+                                return false;
+                            }
+
+                            return ReferenceEquals(
+                                       glyph.Fill,
+                                       rating <= currentRating
+                                           ? LumineDesign.Warning
+                                           : Brushes.Transparent)
+                                   && ReferenceEquals(
+                                       glyph.Stroke,
+                                       rating <= currentRating
+                                           ? LumineDesign.Warning
+                                           : LumineDesign.MutedForeground)
+                                   && Math.Abs(
+                                       glyph.StrokeThickness - 1.8) < 0.01
+                                   && AutomationProperties.GetName(button)
+                                       == expectedName
+                                   && ToolTip.GetTip(button) as string
+                                       == expectedName;
+                        })
+                    .All(static matches => matches);
+
             Require(
                 directRatingButtons.Length == 5
                 && ratingRow.Bounds.Height is >= 35 and <= 37
@@ -5199,14 +5237,16 @@ try
             Require(
                 shell.ContextDetail.RatingText == "★4"
                 && shell.ContextDetail.ColorLabelForSmoke == "green"
-                && shell.ContextDetail.IsDirty,
+                && shell.ContextDetail.IsDirty
+                && RatingStarsMatch(4),
                 "One-click Inspector rating/color controls did not update visible editor state.");
 
             shell.ContextDetail.InvokeRatingForSmoke(4);
             Dispatcher.UIThread.RunJobs();
             Require(
-                shell.ContextDetail.RatingText == "未設定",
-                "Clicking the active Inspector rating did not clear the rating.");
+                shell.ContextDetail.RatingText == "未設定"
+                && RatingStarsMatch(0),
+                "Clearing the active Inspector rating retained filled stars or an accessible selected state.");
 
             var runtimeBeforeInspectorRetry =
                 shellRuntime;
@@ -5224,6 +5264,7 @@ try
                     runtimeBeforeInspectorRetry)
                 && !shell.ContextDetail.RetryVisibleForSmoke
                 && shell.ContextDetail.RatingText == "★5"
+                && RatingStarsMatch(5)
                 && shell.ContextDetail.ColorLabelForSmoke == "purple"
                 && !shell.ContextDetail.IsDirty,
                 "Inspector retry did not reload metadata in place without recreating Viewer runtime.");
