@@ -809,6 +809,14 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         _libraryContextTitle.Text = title;
         _scopeContextTitle.Text = scope;
+        // This header is deliberately narrow to preserve image/search space.
+        // Keep full library and folder identities reachable without moving
+        // focus, resizing the toolbar, or rebuilding the live Search control.
+        ToolTip.SetTip(
+            _workspaceContextHost,
+            string.IsNullOrWhiteSpace(folderPath)
+                ? $"ライブラリ: {title}（すべての画像）"
+                : $"ライブラリ: {title}\nフォルダー: {folderPath}");
         AutomationProperties.SetName(
             _workspaceContextHost,
             $"現在のライブラリ: {title}、{scope}");
@@ -958,6 +966,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
     internal (string? Library, string? Scope) WorkspaceContextForSmoke =>
         (_libraryContextTitle.Text, _scopeContextTitle.Text);
+
+    internal string? WorkspaceContextTooltipForSmoke =>
+        ToolTip.GetTip(_workspaceContextHost) as string;
 
     internal bool PrimaryToolbarIsContainedForSmoke
     {
