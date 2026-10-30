@@ -2998,6 +2998,10 @@ internal static class Program
 
         detail.Fit();
         Dispatcher.UIThread.RunJobs();
+        Require(
+            detail.FitCommandSelectedForSmoke
+            && !detail.ActualSizeCommandSelectedForSmoke,
+            "Fit did not visibly and accessibly identify the selected zoom mode.");
 
         await detailSession.SelectAsync(0);
         await WaitForDetailAsync(
@@ -3059,6 +3063,10 @@ internal static class Program
         Require(
             Math.Abs(detail.Zoom - 1) < 0.001,
             "Actual-size command did not set 1:1 zoom.");
+        Require(
+            detail.ActualSizeCommandSelectedForSmoke
+            && !detail.FitCommandSelectedForSmoke,
+            "1:1 did not visibly and accessibly identify the selected zoom mode.");
 
         var twoXDisplay = DetailViewerControl.CalculateDisplaySize(
             new PixelSize(
@@ -3077,6 +3085,9 @@ internal static class Program
             Math.Abs(detail.Zoom - 2) < 0.001
             && detail.CanPanForSmoke,
             "Detail zoom command did not create a draggable oversized image.");
+        Require(
+            detail.UnselectedZoomCommandsForSmoke,
+            "Free zoom kept a stale selected Fit or 1:1 button state.");
 
         Require(
             detail.HasPanCursorForSmoke,
