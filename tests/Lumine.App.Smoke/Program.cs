@@ -12943,8 +12943,11 @@ try
                                                 .WorkspaceContextForSmoke;
                                         Require(
                                             contextBeforeFiltering.Scope
-                                                == "すべての画像",
-                                            "Browse context failed to identify unfiltered library.");
+                                                == "すべての画像"
+                                            && window.BrowseControlsForSmoke!
+                                                .WorkspaceContextTooltipForSmoke
+                                                == $"ライブラリ: {window.CurrentRuntime!.Library.Name}（すべての画像）",
+                                            "Browse context failed to expose complete unfiltered library identity.");
 
                                         var retainedContextControls =
                                             window.BrowseControlsForSmoke!;
@@ -12962,12 +12965,21 @@ try
                                             && retainedContextControls
                                                 .WorkspaceContextForSmoke.Scope
                                                 == "portrait"
+                                            && retainedContextControls
+                                                .WorkspaceContextTooltipForSmoke
+                                                == $"ライブラリ: {window.CurrentRuntime!.Library.Name}\nフォルダー: assets\\portfolio\\portrait"
                                             && retainedContextControls.IsSearchFocusedForSmoke,
-                                            "Browse library/scope context update recreated the toolbar or stole Search focus.");
+                                            "Browse full library/folder identity tooltip or Search focus was lost during context update.");
                                         retainedContextControls.UpdateWorkspaceContext(
                                             window.CurrentRuntime.Library.Name,
                                             null);
                                         Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            retainedContextControls
+                                                .WorkspaceContextTooltipForSmoke
+                                                == $"ライブラリ: {window.CurrentRuntime.Library.Name}（すべての画像）"
+                                            && retainedContextControls.IsSearchFocusedForSmoke,
+                                            "Restoring the library scope left a stale folder tooltip or stole Search focus.");
 
                                         var visualFilterAsset =
                                             await window.CurrentRuntime!
