@@ -10,8 +10,8 @@ Console.WriteLine(FoundationInfo.RuntimeDescription);
 // defaults must be genuinely GiB-scale and must be internally usable:
 // increasing only the byte budget while keeping the old 96-entry cap
 // would leave most of the native Bitmap cache unreachable.
-const defaultPolicy = CoreResourcePolicy.Resolve(processorCount: 8);
-const gib = 1024L * 1024 * 1024;
+var defaultPolicy = CoreResourcePolicy.Resolve(processorCount: 8);
+const long gib = 1024L * 1024 * 1024;
 if (defaultPolicy.DecodedThumbnailByteLimit < gib
     || defaultPolicy.EncodedThumbnailMemoryByteLimit < gib
     || defaultPolicy.DecodedThumbnailEntryLimit < 2048
