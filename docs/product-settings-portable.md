@@ -21,6 +21,36 @@ User-facing settings are intentionally limited to stable product concepts:
 
 Low-level worker counts, queue capacities, libvips limits, and similar Core tuning remain diagnostics/advanced implementation details rather than ordinary product controls.
 
+## Thumbnail RAM budgets (#634, 2026-10-30)
+
+For an installation with no explicit resource-policy overrides, both independent
+thumbnail caches now default to **1 GiB** maximum residency:
+
+- **Decoded/visible and ahead-of-scroll Bitmap cache:** 1 GiB and at most
+  **2,048 entries** (previously 96 MiB and 96 entries). Individual native
+  Bitmaps are still bounded by the 384px thumbnail decode dimension, decoder
+  concurrency and global native-resource protections.
+- **Encoded in-process thumbnail reuse:** 1 GiB (previously 256 MiB).
+  `MemoryOnly` is still the default; this cache is **not** persistent across
+  application restarts. Enable the existing PersistentDisk option explicitly
+  if repeat-launch reuse is more important than disk writes/usage.
+
+These are **upper bounds**, not startup reservations or an instruction to fill
+the RAM with cold thumbnails. The normal scrolling scheduler admits at most
+three nearby viewports of **new** background predecode work per plan, while
+previously visited thumbnails can stay in the expanded decoded LRU. Far seeks
+keep their small independent bounds and foreground-visible loading remains
+higher priority. A larger RAM ceiling must never trigger a 2,000-entry
+background decode burst at startup.
+
+Advanced Settings offers **1–4 GiB encoded** and **1–2 GiB decoded** budget
+choices as well as legacy small budgets. A user-persisted smaller resource
+policy continues to win over these revised defaults; settings are saved
+immediately and applied on next launch. The app may use substantially more
+RAM over a long session, but must remain within its decoded/encoded
+entry/byte limits. This is not a fix for a slow full filesystem
+reconciliation or a guarantee of instant first-ever thumbnail generation.
+
 ## Storage modes
 
 ### Local user data
