@@ -1,6 +1,4 @@
 using Avalonia;
-using Avalonia.Animation;
-using Avalonia.Animation.Easings;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -516,12 +514,22 @@ internal sealed class CoreViewerShell : UserControl
         && _contextSurface.HorizontalAlignment == HorizontalAlignment.Right
         && _contextSurface.VerticalAlignment == VerticalAlignment.Stretch;
 
-    internal bool InspectorSlideInConfiguredForSmoke =>
-        _contextSurface.Transitions?.OfType<TransformOperationsTransition>()
-            .Any(transition =>
-                transition.Property == Border.RenderTransformProperty
-                && transition.Duration == TimeSpan.FromMilliseconds(200))
-        == true;
+    // Geometry for the actually rendered drawer, including any transform.
+    // Bounds alone cannot catch a panel visually clipped during animation.
+    internal Rect InspectorVisualBoundsInShellForSmoke
+    {
+        get
+        {
+            var origin = _contextSurface.TranslatePoint(
+                new Point(0, 0), this);
+            return origin is { } point
+                ? new Rect(point, _contextSurface.Bounds.Size)
+                : default;
+        }
+    }
+
+    internal bool InspectorOpensWithoutAnimationForSmoke =>
+        _contextSurface.Transitions is null;
 
     internal Rect GridViewerBounds =>
         _grid.Bounds;
@@ -943,47 +951,18 @@ internal sealed class CoreViewerShell : UserControl
     internal async Task ShowContextDetailAsync(
         bool focusSelectedTab = false)
     {
-        var firstOpen = !_contextSurface.IsVisible;
-        // Stage the visual off the right canvas edge before showing it.
-        // The only animated property is the compositor-friendly transform:
-        // no thumbnail viewport resize, new bitmap request or tab rebuild.
-        if (firstOpen)
-        {
-            _contextSurface.Transitions = null;
-            _contextSurface.RenderTransform =
-                TransformOperations.Parse(
-                    $"translateX({_contextSurface.Width + 2:0.##}px)");
-        }
-
+        // The detail editor must be fully on screen as soon as it opens.
+        // An animated 200ms translate previously placed Save/Cancel and
+        // tabs outside the canvas while they were already interactive;
+        // screenshot checks sampled this partially clipped state.
+        // Snap the existing editor to the right edge without recreating
+        // its state, requesting thumbnails or resizing the image grid.
+        _contextSurface.Transitions = null;
+        _contextSurface.RenderTransform =
+            TransformOperations.Parse("translateX(0px)");
         _contextSurface.IsVisible = true;
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
-
-        if (firstOpen)
-        {
-            // Wait until the newly visible drawer has entered the tree;
-            // changes to the same control are then animated from right to 0.
-            Dispatcher.UIThread.Post(
-                () =>
-                {
-                    if (!_contextSurface.IsVisible)
-                    {
-                        return;
-                    }
-                    _contextSurface.Transitions = new Transitions
-                    {
-                        new TransformOperationsTransition
-                        {
-                            Property = Border.RenderTransformProperty,
-                            Duration = TimeSpan.FromMilliseconds(200),
-                            Easing = new CubicEaseOut()
-                        }
-                    };
-                    _contextSurface.RenderTransform =
-                        TransformOperations.Parse("translateX(0px)");
-                },
-                DispatcherPriority.Render);
-        }
 
         var selectedIndex = _grid.SelectedAssetIndex;
         if (selectedIndex < 0)
