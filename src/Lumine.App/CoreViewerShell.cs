@@ -524,7 +524,7 @@ internal sealed class CoreViewerShell : UserControl
                 new Point(0, 0), this);
             return origin is { } point
                 ? new Rect(point, _contextSurface.Bounds.Size)
-                : Rect.Empty;
+                : default;
         }
     }
 
