@@ -49,17 +49,22 @@ internal static class ProductSettingsView
         128L * 1024 * 1024,
         256L * 1024 * 1024,
         512L * 1024 * 1024,
-        1024L * 1024 * 1024
+        1024L * 1024 * 1024,
+        2L * 1024 * 1024 * 1024,
+        4L * 1024 * 1024 * 1024
     ];
 
-    // The native decoded cache has its own limit and an independent
-    // 512-entry safety ceiling. Presets are intentionally conservative.
+    // Decoded presentation capacity is independent from compressed bytes.
+    // The Core policy also enforces a separate bounded entry-count limit.
     private static readonly long[] DecodedBudgetOptions =
     [
         64L * 1024 * 1024,
         96L * 1024 * 1024,
         128L * 1024 * 1024,
-        256L * 1024 * 1024
+        256L * 1024 * 1024,
+        512L * 1024 * 1024,
+        1024L * 1024 * 1024,
+        2L * 1024 * 1024 * 1024
     ];
 
     public static Control Create(
@@ -1087,7 +1092,7 @@ internal static class ProductSettingsView
         var decodedField = CreateFieldWithDescription(
             "画像先読み用メモリ上限（展開済み）",
             decoded,
-            "スクロール前に用意する画像Bitmapのメモリ枠です。表示中の画像を優先し、最大512件の保護上限も適用します。変更は次回起動から有効です。");
+            "スクロール前に用意する画像Bitmapのメモリ枠です。表示中の画像を優先し、最大4096件の保護上限も適用します。変更は次回起動から有効です。");
         decodedField.Width = 280;
         decodedField.Margin = new Thickness(
             0,

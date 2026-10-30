@@ -11260,8 +11260,10 @@ try
                                     "128 MiB");
                         Require(
                             aheadBudgetSelector.IsEffectivelyVisible
-                            && nextAheadIndex >= 0,
-                            "Advanced Settings did not mount the independent decoded ahead-memory budget control.");
+                            && nextAheadIndex >= 0
+                            && aheadChoices.Contains("1 GiB")
+                            && aheadChoices.Contains("2 GiB"),
+                            "Advanced Settings did not expose GiB-scale decoded ahead-memory choices.");
                         // Always force a different selection even when
                         // the user's fixture begins at 128 MiB.
                         var selectedAheadIndex =
