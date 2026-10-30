@@ -1325,11 +1325,10 @@ internal static class Program
                 attachedTiles: 7, readyTiles: 8, activeBitmapDecodes: 0),
             "Small-view normal scroll did not warm its next row after one slow tile, or speculation stole active foreground decode capacity.");
 
-        // Owner retest: even after the viewport-ahead repair, the
-        // fixed 6/14 decoded-row ceiling can leave large configured
-        // caches underused. Spend the worst-case RGBA capacity forward
-        // while reserving visible tiles and the nearby reverse edge.
-        // Far seeks preserve the old 2-Grid / 3-List work bound.
+        // The enlarged native cache is retained across scrolls, but
+        // cold startup must not eagerly enqueue the entire GiB budget.
+        // One pass warms at most three viewports, while reserving the
+        // next reverse row(s). Far seeks retain original 2/3-row caps.
         var normalGrid =
             ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
                 isList: false, configuredRows: 2,
@@ -1355,10 +1354,9 @@ internal static class Program
                 isList: true, configuredRows: 2,
                 visibleRows: 9, columns: 1, attachedTiles: 12,
                 twoSidedOptions, isFarSeek: true);
-        // The decoded cache budget, not a hardcoded 6/14-row cap,
-        // governs normal browsing. Raising only the user's configured
-        // cache allowance must enlarge the warm horizon. Geometry
-        // still includes the currently pinned viewport and both sides.
+        // Byte/entry budgets bound residency; an independent three-
+        // viewport work horizon bounds startup enqueue/CPU. Enlarging
+        // the budget permits retention without a cold-task flood.
         var expandedMemory = new ViewerOptions
         {
             DecodedBitmapEntryLimit = 128,
@@ -1391,28 +1389,31 @@ internal static class Program
                 visibleRows: 5, columns: 7, attachedTiles: 55,
                 twoSidedOptions, isFarSeek: false);
         Require(
-            normalGrid.PreferredSourceRows == 7
+            normalGrid.PreferredSourceRows == 14
             && normalGrid.OppositeSourceRows == 2
-            && normalGrid.PreferredBitmapRows == 7
+            && normalGrid.PreferredBitmapRows == 14
             && normalGrid.OppositeBitmapRows == 1
+            && normalGrid.PreferredBitmapRows
+                + normalGrid.OppositeBitmapRows == 15
             && 35 + (normalGrid.PreferredBitmapRows
-                + normalGrid.OppositeBitmapRows) * 7 <= 96
+                + normalGrid.OppositeBitmapRows) * 7 <=
+                    new ViewerOptions().DecodedBitmapEntryLimit
             && smallBudgetGrid.PreferredSourceRows == 6
             && smallBudgetGrid.PreferredBitmapRows == 2
             && smallBudgetGrid.OppositeBitmapRows == 1
             && 35 + (smallBudgetGrid.PreferredBitmapRows
                 + smallBudgetGrid.OppositeBitmapRows) * 7 <= 56
-            && normalList.PreferredSourceRows == 42
+            && normalList.PreferredSourceRows == 25
             && normalList.OppositeSourceRows == 2
-            && normalList.PreferredBitmapRows == 42
+            && normalList.PreferredBitmapRows == 25
             && normalList.OppositeBitmapRows == 2
-            && 12 + normalList.PreferredBitmapRows
-                + normalList.OppositeBitmapRows == 56
-            && expandedList.PreferredSourceRows == 114
-            && expandedList.PreferredBitmapRows == 114
+            && normalList.PreferredBitmapRows
+                + normalList.OppositeBitmapRows == 27
+            && expandedList.PreferredSourceRows == 25
+            && expandedList.PreferredBitmapRows == 25
             && expandedList.OppositeBitmapRows == 2
-            && 12 + expandedList.PreferredBitmapRows
-                + expandedList.OppositeBitmapRows == 128
+            && expandedList.PreferredBitmapRows
+                + expandedList.OppositeBitmapRows == 27
             && wideGrid.PreferredBitmapRows == 4
             && wideGrid.OppositeBitmapRows == 1
             && 60 + (wideGrid.PreferredBitmapRows
@@ -1830,7 +1831,9 @@ internal static class Program
             && ThumbnailViewerControl
                 .ResolveWarmPresentationDescriptorLimitForSmoke(512) == 1024
             && ThumbnailViewerControl
-                .ResolveWarmPresentationDescriptorLimitForSmoke(2048) == 1024
+                .ResolveWarmPresentationDescriptorLimitForSmoke(2048) == 4096
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(4096) == 8192
             && ThumbnailViewerControl
                 .ResolveWarmPresentationDescriptorLimitForSmoke(0) == 16
             && viewer.WarmPresentationDescriptorLimitForSmoke == 128,
