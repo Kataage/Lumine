@@ -2110,14 +2110,23 @@ public sealed class DetailViewerControl : UserControl
     internal bool FitCommandSelectedForSmoke =>
         ReferenceEquals(_fit.Background, ViewerVisualTokens.SelectedSurface)
         && _fit.FontWeight == FontWeight.SemiBold
-        && AutomationProperties.GetName(_fit)?.EndsWith(
-            "選択中", StringComparison.Ordinal) == true;
+        && AutomationProperties.GetName(_fit)
+            == "ウィンドウに合わせる (0)・選択中"
+        && ToolTip.GetTip(_fit) as string
+            == AutomationProperties.GetName(_fit)
+        && AutomationProperties.GetName(_actual) == "100%表示"
+        && ToolTip.GetTip(_actual) as string
+            == AutomationProperties.GetName(_actual);
 
     internal bool ActualSizeCommandSelectedForSmoke =>
         ReferenceEquals(_actual.Background, ViewerVisualTokens.SelectedSurface)
         && _actual.FontWeight == FontWeight.SemiBold
-        && AutomationProperties.GetName(_actual)?.EndsWith(
-            "選択中", StringComparison.Ordinal) == true;
+        && AutomationProperties.GetName(_actual) == "100%表示・選択中"
+        && ToolTip.GetTip(_actual) as string
+            == AutomationProperties.GetName(_actual)
+        && AutomationProperties.GetName(_fit) == "ウィンドウに合わせる (0)"
+        && ToolTip.GetTip(_fit) as string
+            == AutomationProperties.GetName(_fit);
 
     internal bool UnselectedZoomCommandsForSmoke =>
         ReferenceEquals(_fit.Background, Brushes.Transparent)
@@ -2125,7 +2134,11 @@ public sealed class DetailViewerControl : UserControl
         && _fit.FontWeight == FontWeight.Normal
         && _actual.FontWeight == FontWeight.Normal
         && AutomationProperties.GetName(_fit) == "ウィンドウに合わせる (0)"
-        && AutomationProperties.GetName(_actual) == "100%表示";
+        && ToolTip.GetTip(_fit) as string
+            == AutomationProperties.GetName(_fit)
+        && AutomationProperties.GetName(_actual) == "100%表示"
+        && ToolTip.GetTip(_actual) as string
+            == AutomationProperties.GetName(_actual);
 
     internal bool HasPanCursorForSmoke =>
         !ReferenceEquals(
