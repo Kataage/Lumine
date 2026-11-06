@@ -1685,11 +1685,28 @@ try
         "Filename keyset paging was not stably sorted.");
 
 
+    var rebuildStageSamples =
+        new List<(string Name, TimeSpan Wall, TimeSpan Cpu)>();
     var rebuiltSearchRows =
-        await repository.RebuildSearchIndexAsync(library.Id);
+        await repository.RebuildSearchIndexAsync(
+            library.Id,
+            timingObserver: (name, wall, cpu) =>
+                rebuildStageSamples.Add((name, wall, cpu)));
     Require(
         rebuiltSearchRows == 3,
         $"Search index rebuild covered {rebuiltSearchRows} assets; expected 3.");
+    Require(
+        rebuildStageSamples.Select(static sample => sample.Name)
+            .SequenceEqual(
+            [
+                "open", "begin", "count", "delete_ftscjk",
+                "insert_fts", "detect_insert_cjk", "clear_dirty", "commit"
+            ])
+        && rebuildStageSamples.All(
+            static sample =>
+                sample.Wall >= TimeSpan.Zero
+                && sample.Cpu >= TimeSpan.Zero),
+        "Rebuild diagnostics lost a bounded production phase or reported negative timing.");
 
     var rebuiltJapanese = await repository.GetAssetPageAsync(
         library.Id,
