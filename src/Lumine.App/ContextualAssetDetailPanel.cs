@@ -3084,15 +3084,34 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             var button = _ratingButtons[index];
             if (button.Content is Avalonia.Controls.Shapes.Path glyph)
             {
+                var filled = rating <= selected;
+                // A filled vs outlined star remains distinguishable without
+                // color perception; the previous solid amber/gray stars
+                // communicated the saved rating by color alone.
                 glyph.Fill =
-                    rating <= selected
+                    filled
+                        ? LumineDesign.Warning
+                        : Brushes.Transparent;
+                glyph.Stroke =
+                    filled
                         ? LumineDesign.Warning
                         : LumineDesign.MutedForeground;
+                glyph.StrokeThickness = 1.8;
             }
 
-            // Rating is communicated by the filled-star count. Keep every
-            // resting cell visually identical so the selected rating never
-            // looks like one oversized boxed button.
+            var accessibleName =
+                rating == selected
+                    ? $"評価 {rating}（選択中、再度押すと解除）"
+                    : $"評価 {rating}";
+            AutomationProperties.SetName(
+                button,
+                accessibleName);
+            ToolTip.SetTip(
+                button,
+                accessibleName);
+
+            // Keep all hit targets and geometry identical, including when
+            // the user selects/clears the current rating with one click.
             button.Background =
                 Brushes.Transparent;
             button.BorderBrush =
