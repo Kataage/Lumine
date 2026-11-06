@@ -1126,21 +1126,21 @@ public sealed class DetailViewerControl : UserControl
             ? ViewerVisualTokens.SelectedSurface
             : Brushes.Transparent;
         _fit.FontWeight = fitSelected ? FontWeight.SemiBold : FontWeight.Normal;
-        AutomationProperties.SetName(
-            _fit,
-            fitSelected
-                ? "ウィンドウに合わせる (0)・選択中"
-                : "ウィンドウに合わせる (0)");
+        var fitName = fitSelected
+            ? "ウィンドウに合わせる (0)・選択中"
+            : "ウィンドウに合わせる (0)";
+        AutomationProperties.SetName(_fit, fitName);
+        ToolTip.SetTip(_fit, fitName);
 
         _actual.Background = actualSelected
             ? ViewerVisualTokens.SelectedSurface
             : Brushes.Transparent;
         _actual.FontWeight = actualSelected ? FontWeight.SemiBold : FontWeight.Normal;
-        AutomationProperties.SetName(
-            _actual,
-            actualSelected
-                ? "100%表示・選択中"
-                : "100%表示");
+        var actualName = actualSelected
+            ? "100%表示・選択中"
+            : "100%表示";
+        AutomationProperties.SetName(_actual, actualName);
+        ToolTip.SetTip(_actual, actualName);
     }
 
     private double SliderFromZoom(
