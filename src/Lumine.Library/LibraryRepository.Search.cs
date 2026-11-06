@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -390,26 +391,55 @@ public sealed partial class LibraryRepository
 
     public async Task<int> RebuildSearchIndexAsync(
         long libraryId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string, TimeSpan, TimeSpan>? timingObserver = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // #774: measure only bounded production phase boundaries, never
+        // individual FTS rows.  The optional observer is used by the strict
+        // benchmark to distinguish SQLite work from an awaited COMMIT stall.
+        // It cannot change the search SQL or the WAL/checkpoint policy.
+        using var timingProcess =
+            timingObserver is null ? null : Process.GetCurrentProcess();
+        var phaseStart = timingObserver is null
+            ? 0L
+            : Stopwatch.GetTimestamp();
+        var cpuStart = timingProcess?.TotalProcessorTime ?? TimeSpan.Zero;
+        void ObservePhase(string phase)
+        {
+            if (timingObserver is null)
+            {
+                return;
+            }
+
+            var elapsed = Stopwatch.GetElapsedTime(phaseStart);
+            var cpu = timingProcess!.TotalProcessorTime;
+            timingObserver(phase, elapsed, cpu - cpuStart);
+            phaseStart = Stopwatch.GetTimestamp();
+            cpuStart = cpu;
+        }
+
         await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
+        ObservePhase("open");
         using var transaction = connection.BeginTransaction();
+        ObservePhase("begin");
 
         var count = await CountLibraryAssetsOnConnectionAsync(
             connection,
             transaction,
             libraryId,
             cancellationToken).ConfigureAwait(false);
+        ObservePhase("count");
 
         await DeleteSearchRowsForLibraryAsync(
             connection,
             transaction,
             libraryId,
             cancellationToken).ConfigureAwait(false);
+        ObservePhase("delete_ftscjk");
 
         await InsertFtsRowsAsync(
             connection,
@@ -418,6 +448,7 @@ public sealed partial class LibraryRepository
             assetId: null,
             dirtyOnly: false,
             cancellationToken).ConfigureAwait(false);
+        ObservePhase("insert_fts");
 
         await InsertCjkBigramsAsync(
             connection,
@@ -426,6 +457,7 @@ public sealed partial class LibraryRepository
             assetId: null,
             dirtyOnly: false,
             cancellationToken).ConfigureAwait(false);
+        ObservePhase("detect_insert_cjk");
 
         await using (var clearDirty = connection.CreateCommand())
         {
@@ -441,8 +473,10 @@ public sealed partial class LibraryRepository
             await clearDirty.ExecuteNonQueryAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
+        ObservePhase("clear_dirty");
 
         transaction.Commit();
+        ObservePhase("commit");
         return checked((int)count);
     }
 
