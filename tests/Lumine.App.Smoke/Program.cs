@@ -5260,6 +5260,22 @@ try
                     inspectorTagPicker.CandidateSurfaceVisibleForSmoke
                     && candidateButton.IsEffectivelyVisible,
                     "Focus transfer from tag search to a suggestion hid the candidate.");
+
+                // Leaving the picker (unlike tabbing into a candidate)
+                // returns the Inspector to its compact image-first state.
+                Require(
+                    directRatingButtons[0].Focus(),
+                    "Inspector rating could not receive focus after tag suggestions.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
+                    && inspectorTagPicker.CandidateCountForSmoke == 0,
+                    "Leaving Inspector tag editing kept a large candidate list open.");
+                Require(tagSearch.Focus(), "Tag search could not reopen suggestions.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateSurfaceVisibleForSmoke,
+                    "Returning to tag search did not reopen candidates.");
                 var dismissCandidates = new KeyEventArgs
                 {
                     RoutedEvent = InputElement.KeyDownEvent,
