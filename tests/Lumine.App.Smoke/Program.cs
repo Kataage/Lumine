@@ -5209,11 +5209,79 @@ try
             Require(
                 inspectorTagPicker.CandidateCountForSmoke == 0
                 && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
-                && string.Equals(
-                    inspectorTagPicker.SummaryTextForSmoke,
-                    "追加できるタグはありません。",
-                    StringComparison.Ordinal),
-                "Inspector empty tag candidates still rendered a redundant boxed empty state.");
+                && inspectorTagPicker.SummaryTextForSmoke == string.Empty,
+                "Inspector idle tag editor rendered a redundant candidate list or status card.");
+
+            // With an unassigned real database tag, the idle Inspector
+            // must not spend 184 DIP on suggestions. Focusing the search
+            // reveals it, moving focus *within* the candidate buttons
+            // must keep it clickable, and Esc collapses the list.
+            var availableTag = await shellRuntime.LibraryService
+                .CreateTagAsync(
+                    shellRuntime.Library.Id,
+                    "inspector-progressive-candidate",
+                    "#6366f1");
+            try
+            {
+                await inspectorTagPicker.RefreshAsync(["context-tag"]);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateCountForSmoke == 0
+                    && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
+                    && inspectorTagPicker.SummaryTextForSmoke == string.Empty,
+                    "Inspector pre-rendered unrequested candidates for an idle image.");
+                var tagSearch = inspectorTagPicker
+                    .GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .Single(box =>
+                        box.PlaceholderText == "タグを検索・追加");
+                Require(
+                    tagSearch.Focus(),
+                    "Inspector tag search did not accept keyboard focus.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateCountForSmoke == 1
+                    && inspectorTagPicker.CandidateSurfaceVisibleForSmoke,
+                    "Focusing Inspector tag search failed to reveal the available tag.");
+                var candidateButton = inspectorTagPicker
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button =>
+                        button.Content is Grid candidate
+                        && candidate.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(text => text.Text
+                                == "inspector-progressive-candidate"));
+                Require(
+                    candidateButton.Focus(),
+                    "Inspector candidate did not receive keyboard focus.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateSurfaceVisibleForSmoke
+                    && candidateButton.IsEffectivelyVisible,
+                    "Focus transfer from tag search to a suggestion hid the candidate.");
+                var dismissCandidates = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Escape
+                };
+                tagSearch.RaiseEvent(dismissCandidates);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    dismissCandidates.Handled
+                    && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
+                    && inspectorTagPicker.CandidateCountForSmoke == 0
+                    && inspectorTagPicker.SummaryTextForSmoke == string.Empty,
+                    "Escape did not dismiss Inspector tag suggestions without closing Inspector.");
+            }
+            finally
+            {
+                await shellRuntime.LibraryService.DeleteTagAsync(
+                    shellRuntime.Library.Id,
+                    availableTag.Id);
+                await inspectorTagPicker.RefreshAsync(["context-tag"]);
+                Dispatcher.UIThread.RunJobs();
+            }
 
 
             if (visualOutputDirectory is not null)
