@@ -1685,11 +1685,28 @@ try
         "Filename keyset paging was not stably sorted.");
 
 
+    var rebuildStageSamples =
+        new List<(string Name, TimeSpan Wall, TimeSpan Cpu)>();
     var rebuiltSearchRows =
-        await repository.RebuildSearchIndexAsync(library.Id);
+        await repository.RebuildSearchIndexAsync(
+            library.Id,
+            timingObserver: (name, wall, cpu) =>
+                rebuildStageSamples.Add((name, wall, cpu)));
     Require(
         rebuiltSearchRows == 3,
         $"Search index rebuild covered {rebuiltSearchRows} assets; expected 3.");
+    Require(
+        rebuildStageSamples.Select(static sample => sample.Name)
+            .SequenceEqual(
+            [
+                "open", "begin", "count", "delete_ftscjk",
+                "insert_fts", "detect_insert_cjk", "clear_dirty", "commit"
+            ])
+        && rebuildStageSamples.All(
+            static sample =>
+                sample.Wall >= TimeSpan.Zero
+                && sample.Cpu >= TimeSpan.Zero),
+        "Rebuild diagnostics lost a bounded production phase or reported negative timing.");
 
     var rebuiltJapanese = await repository.GetAssetPageAsync(
         library.Id,
@@ -1701,6 +1718,126 @@ try
         rebuiltJapanese.Items.Count == 1
         && rebuiltJapanese.Items[0].Id == technical.Id,
         "Search index rebuild did not restore notes/tag search state.");
+
+    // #774: FTS5 is one shared virtual table for all libraries. A future
+    // performance optimization must not use a global delete-all and erase
+    // another library's complete indexed text.
+    var indexedForeignLibrary = await repository.RegisterLibraryAsync(
+        "Search Rebuild Isolation",
+        secondaryRoot);
+    await repository.UpsertAssetsAsync(
+        indexedForeignLibrary.Id,
+        [
+            new AssetUpsert(
+                "foreign/isolated-reference.png",
+                123,
+                DateTimeOffset.UtcNow,
+                Format: "png")
+        ]);
+    var indexedForeignAsset = await repository.GetAssetAsync(
+        indexedForeignLibrary.Id,
+        "foreign/isolated-reference.png")
+        ?? throw new InvalidOperationException(
+            "Second library search fixture was not created.");
+    _ = await repository.SetUserMetadataAsync(
+        indexedForeignLibrary.Id,
+        indexedForeignAsset.Id,
+        new AssetUserMetadataUpdate(
+            Rating: 2,
+            Favorite: false,
+            Notes: "別館 猫耳 foreign reference",
+            StatusLabel: "draft",
+            ColorLabel: "green",
+            Tags: ["foreign-blue"]));
+    Require(
+        await repository.RebuildSearchIndexAsync(indexedForeignLibrary.Id) == 1,
+        "Second library search index rebuild did not cover its asset.");
+    Require(
+        await repository.RebuildSearchIndexAsync(library.Id) == 3,
+        "First library rebuild lost its three source assets.");
+
+    var foreignAfterPrimaryRebuild = await repository.GetAssetPageAsync(
+        indexedForeignLibrary.Id,
+        new AssetQuery(
+            SearchText: "isolated",
+            RequiredTags: ["foreign-blue"]),
+        10);
+    var foreignJapaneseAfterPrimaryRebuild =
+        await repository.GetAssetPageAsync(
+            indexedForeignLibrary.Id,
+            new AssetQuery(SearchText: "猫耳"),
+            10);
+    Require(
+        foreignAfterPrimaryRebuild.Items.Count == 1
+        && foreignAfterPrimaryRebuild.Items[0].Id == indexedForeignAsset.Id
+        && foreignJapaneseAfterPrimaryRebuild.Items.Count == 1
+        && foreignJapaneseAfterPrimaryRebuild.Items[0].Id
+            == indexedForeignAsset.Id,
+        "Rebuilding one library removed another library's FTS/CJK postings.");
+    Require(
+        await repository.RemoveLibraryRegistrationAsync(
+            indexedForeignLibrary.Id),
+        "Second search-isolation fixture could not be unregistered.");
+
+    // A CJK INSERT error happens after the FTS delete/insert steps. The
+    // whole explicit rebuild must roll back, preserving the previously
+    // committed search rows, not leave a half-built index.
+    await using (var faultConnection =
+                     new SqliteConnection(
+                         $"Data Source={databasePath};Pooling=False"))
+    {
+        await faultConnection.OpenAsync();
+        await using var install = faultConnection.CreateCommand();
+        install.CommandText =
+            $"""
+            CREATE TRIGGER smoke_rebuild_cjk_abort
+            BEFORE INSERT ON asset_search_cjk_bigrams
+            WHEN NEW.library_id = {library.Id}
+            BEGIN
+                SELECT RAISE(ABORT, 'smoke rebuild forced rollback');
+            END;
+            """;
+        await install.ExecuteNonQueryAsync();
+    }
+
+    try
+    {
+        try
+        {
+            _ = await repository.RebuildSearchIndexAsync(library.Id);
+            throw new InvalidOperationException(
+                "Forced CJK rebuild error did not abort the transaction.");
+        }
+        catch (SqliteException exception)
+            when (exception.Message.Contains(
+                "smoke rebuild forced rollback",
+                StringComparison.Ordinal))
+        {
+            // The source transaction must be disposed and rolled back
+            // before the existing index is queried again.
+        }
+    }
+    finally
+    {
+        await using var cleanupConnection = new SqliteConnection(
+            $"Data Source={databasePath};Pooling=False");
+        await cleanupConnection.OpenAsync();
+        await using var cleanup = cleanupConnection.CreateCommand();
+        cleanup.CommandText =
+            "DROP TRIGGER IF EXISTS smoke_rebuild_cjk_abort;";
+        await cleanup.ExecuteNonQueryAsync();
+    }
+
+    var afterFailedRebuild = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            SearchText: "猫耳",
+            RequiredTags: ["推し"]),
+        10);
+    Require(
+        afterFailedRebuild.Items.Count == 1
+        && afterFailedRebuild.Items[0].Id == technical.Id,
+        "A failed FTS/CJK rebuild did not atomically restore prior search rows.");
 
     using (var cancelledSearch = new CancellationTokenSource())
     {

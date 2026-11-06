@@ -125,6 +125,16 @@ var metadataCommitSevereStored = 0;
 var metadataCommitSevereOverflow = 0;
 var metadataObservedWrites = 0;
 var searchIndexed = 0;
+// One fixed observation per actual production rebuild phase.  These timings
+// are diagnostic only: the original aggregate 100k <=12s gate is untouched.
+string[] searchRebuildStages =
+[
+    "open", "begin", "count", "delete_ftscjk",
+    "insert_fts", "detect_insert_cjk", "clear_dirty", "commit"
+];
+var searchRebuildTimings =
+    new Dictionary<string, (TimeSpan Wall, TimeSpan Cpu)>(
+        StringComparer.Ordinal);
 var pairedWarmAbRows = 0;
 var pairedWarmAbBatchGroups = 0;
 var pairedWarmAbMeasurements = new Dictionary<string, double>(
@@ -690,7 +700,23 @@ try
     using (recorder.Measure(CoreMetricNames.LibrarySearchIndexRebuild))
     {
         searchIndexed = await repository.RebuildSearchIndexAsync(
-            library.Id);
+            library.Id,
+            timingObserver: (phase, wall, cpu) =>
+            {
+                if (!searchRebuildTimings.TryAdd(phase, (wall, cpu)))
+                {
+                    throw new InvalidOperationException(
+                        $"Duplicate search-index rebuild phase: {phase}");
+                }
+            });
+    }
+
+    if (searchRebuildTimings.Count != searchRebuildStages.Length
+        || searchRebuildStages.Any(
+            phase => !searchRebuildTimings.ContainsKey(phase)))
+    {
+        throw new InvalidOperationException(
+            "Search-index rebuild did not report all bounded production phases.");
     }
 
     if (searchIndexed != count)
@@ -876,6 +902,15 @@ try
             ["technical_metadata_commit_ge_128ms_overflow"] = metadataCommitSevereOverflow.ToString(CultureInfo.InvariantCulture),
             ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
+            ["search_index_rebuild_phase_order"] = string.Join(",", searchRebuildStages),
+            ["search_index_rebuild_phase_wall_ms_csv"] = string.Join(
+                ",", searchRebuildStages.Select(
+                    phase => searchRebuildTimings[phase].Wall.TotalMilliseconds
+                        .ToString("F3", CultureInfo.InvariantCulture))),
+            ["search_index_rebuild_phase_process_cpu_ms_csv"] = string.Join(
+                ",", searchRebuildStages.Select(
+                    phase => searchRebuildTimings[phase].Cpu.TotalMilliseconds
+                        .ToString("F3", CultureInfo.InvariantCulture))),
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
             ["database_bytes"] = databaseBytes.ToString(CultureInfo.InvariantCulture),
             ["starting_working_set_bytes"] = startingWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
@@ -933,6 +968,11 @@ try
             index => $"{metadataCommitSevereOrdinals[index]}:{metadataCommitSevereTicks[index]}"))}; " +
         $"overflow={metadataCommitSevereOverflow}.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
+    Console.WriteLine(
+        "Search index rebuild bounded stage wall / process CPU (ms): " +
+        string.Join("; ", searchRebuildStages.Select(phase =>
+            $"{phase}={searchRebuildTimings[phase].Wall.TotalMilliseconds:F1}/" +
+            $"{searchRebuildTimings[phase].Cpu.TotalMilliseconds:F1}")));
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
     Console.WriteLine($"Ingest retained working set: {retainedWorkingSetBytes / 1048576d:N1} MiB (+{retainedAdditionalWorkingSetBytes / 1048576d:N1} MiB), post-GC heap={postGcHeapSizeBytes / 1048576d:N1} MiB");
