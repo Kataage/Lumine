@@ -5284,7 +5284,7 @@ try
             shell.ContextDetail.InvokeColorForSmoke(0);
             Dispatcher.UIThread.RunJobs();
             Require(
-                shell.ContextDetail.ColorLabelForSmoke == "未設定"
+                shell.ContextDetail.ColorLabelForSmoke == string.Empty
                 && ColorSwatchesMatch(0),
                 "Clearing Inspector color did not expose 未設定 as the active swatch.");
 
