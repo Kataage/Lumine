@@ -5057,6 +5057,38 @@ try
                                 "カラー ",
                                 StringComparison.Ordinal))
                     .ToArray();
+            // The visible outer ring must have an equivalent active name.
+            // Keep the eight original swatch geometry/spacing assertions.
+            var colorNames = new[]
+            {
+                "未設定", "Red", "Orange", "Yellow",
+                "Green", "Blue", "Purple", "Gray"
+            };
+            bool ColorSwatchesMatch(int selectedIndex) =>
+                directColorButtons.Length == colorNames.Length
+                && directColorButtons
+                    .Select((button, index) =>
+                    {
+                        var active = index == selectedIndex;
+                        var expectedName =
+                            active
+                                ? $"カラー {colorNames[index]}（選択中）"
+                                : $"カラー {colorNames[index]}";
+                        var expectedTip =
+                            active
+                                ? $"{colorNames[index]}（選択中）"
+                                : colorNames[index];
+                        return AutomationProperties.GetName(button)
+                                   == expectedName
+                               && ToolTip.GetTip(button) as string
+                                   == expectedTip
+                               && ReferenceEquals(
+                                   button.BorderBrush,
+                                   active
+                                       ? LumineDesign.Focus
+                                       : Brushes.Transparent);
+                    })
+                    .All(static matches => matches);
             var colorCenters =
                 directColorButtons
                     .Select(
@@ -5238,7 +5270,8 @@ try
                 shell.ContextDetail.RatingText == "★4"
                 && shell.ContextDetail.ColorLabelForSmoke == "green"
                 && shell.ContextDetail.IsDirty
-                && RatingStarsMatch(4),
+                && RatingStarsMatch(4)
+                && ColorSwatchesMatch(4),
                 "One-click Inspector rating/color controls did not update visible editor state.");
 
             shell.ContextDetail.InvokeRatingForSmoke(4);
@@ -5247,6 +5280,13 @@ try
                 shell.ContextDetail.RatingText == "未設定"
                 && RatingStarsMatch(0),
                 "Clearing the active Inspector rating retained filled stars or an accessible selected state.");
+
+            shell.ContextDetail.InvokeColorForSmoke(0);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.ColorLabelForSmoke == "未設定"
+                && ColorSwatchesMatch(0),
+                "Clearing Inspector color did not expose 未設定 as the active swatch.");
 
             var runtimeBeforeInspectorRetry =
                 shellRuntime;
@@ -5266,6 +5306,7 @@ try
                 && shell.ContextDetail.RatingText == "★5"
                 && RatingStarsMatch(5)
                 && shell.ContextDetail.ColorLabelForSmoke == "purple"
+                && ColorSwatchesMatch(6)
                 && !shell.ContextDetail.IsDirty,
                 "Inspector retry did not reload metadata in place without recreating Viewer runtime.");
 
