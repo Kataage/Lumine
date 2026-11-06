@@ -323,7 +323,10 @@ internal sealed class ManagedTagPicker : UserControl
         IReadOnlyList<string> tags,
         CancellationToken cancellationToken = default)
     {
+        // A new selected image must not inherit the previous asset's
+        // search query or keep an unrelated candidate list open.
         _showCandidates = false;
+        _search.Text = string.Empty;
         SetSelectedTags(tags);
         _summary.Text = "タグを読み込んでいます…";
         _allTags =
