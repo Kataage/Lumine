@@ -4318,7 +4318,7 @@ try
                         ["Art", "art", "keep"],
                     MinRating: 3,
                     FavoriteOnly: true,
-                    SortOrder: AssetSortOrder.FilenameAscending);
+                    SortOrder: AssetSortOrder.FileNameAscending);
                 var withoutVariant =
                     variantTags.ToggleTagScope(
                         " ART ");
@@ -4331,7 +4331,7 @@ try
                     && withoutVariant.MinRating == 3
                     && withoutVariant.FavoriteOnly
                     && withoutVariant.SortOrder
-                        == AssetSortOrder.FilenameAscending,
+                        == AssetSortOrder.FileNameAscending,
                     "Case-insensitive Tag toggle left duplicate conditions or lost unrelated refinements.");
                 var addedAgain =
                     withoutVariant.ToggleTagScope(
