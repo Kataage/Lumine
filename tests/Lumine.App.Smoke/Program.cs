@@ -5289,6 +5289,21 @@ try
                     && inspectorTagPicker.CandidateCountForSmoke == 0
                     && inspectorTagPicker.SummaryTextForSmoke == string.Empty,
                     "Escape did not dismiss Inspector tag suggestions without closing Inspector.");
+
+                // When the Inspector refreshes for another selected image,
+                // its old search query must not reopen an unrelated list.
+                inspectorTagPicker.SetSearchForSmoke("progressive");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateSurfaceVisibleForSmoke,
+                    "Typing a non-empty Inspector tag query lost suggestions.");
+                await inspectorTagPicker.RefreshAsync(["context-tag"]);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    tagSearch.Text == string.Empty
+                    && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
+                    && inspectorTagPicker.CandidateCountForSmoke == 0,
+                    "Refreshing an Inspector asset retained the previous tag query.");
             }
             finally
             {
