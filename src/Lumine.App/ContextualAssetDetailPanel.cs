@@ -3141,6 +3141,22 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     : Brushes.Transparent;
             button.BorderThickness =
                 new Thickness(2);
+
+            // The selection ring is a visual cue, not a screen-reader
+            // state. Keep every swatch's existing Japanese/English color
+            // name and announce the active choice (including 未設定).
+            var accessibleName =
+                active
+                    ? $"カラー {ColorLabels[index]}（選択中）"
+                    : $"カラー {ColorLabels[index]}";
+            AutomationProperties.SetName(
+                button,
+                accessibleName);
+            ToolTip.SetTip(
+                button,
+                active
+                    ? $"{ColorLabels[index]}（選択中）"
+                    : ColorLabels[index]);
         }
     }
 
