@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -475,9 +476,14 @@ internal sealed class ManagedTagPicker : UserControl
             LumineDesign
                 .ConfigureSelectedButtonStateResources(
                     chip);
+            var removeLabel =
+                $"付与済みタグを外す: {name}";
+            AutomationProperties.SetName(
+                chip,
+                removeLabel);
             ToolTip.SetTip(
                 chip,
-                $"{name} を外す");
+                removeLabel);
 
             var current = name;
             chip.Click +=
@@ -615,6 +621,14 @@ internal sealed class ManagedTagPicker : UserControl
                                 LumineDesign.Space8,
                                 LumineDesign.Space4)
                     });
+            var addLabel =
+                $"画像にタグを追加: {tag.Name}";
+            AutomationProperties.SetName(
+                button,
+                addLabel);
+            ToolTip.SetTip(
+                button,
+                addLabel);
             var current = tag;
             button.Click +=
                 async (_, _) =>
