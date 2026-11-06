@@ -3119,24 +3119,35 @@ public sealed class MainWindow : Window
                 "タグを削除できませんでした。");
         }
 
-        var remaining =
-            _browseFilterState.TagNames
-                .Where(value =>
-                    !string.Equals(
-                        value,
-                        tag.Name,
-                        StringComparison.Ordinal))
-                .ToArray();
-        if (remaining.Length
-            != _browseFilterState.TagNames.Count)
+        if (_browseControls is not null)
         {
-            _browseFilterState =
-                _browseFilterState with
-                {
-                    RequiredTags =
-                        remaining
-                };
-            await ApplyBrowseQueryAsync();
+            // The toolbar owns the live tag chips. Updating only
+            // _browseFilterState leaves a deleted tag visible and lets
+            // the next toolbar interaction reapply the stale filter.
+            await _browseControls.RemoveTagScopeAsync(
+                tag.Name);
+        }
+        else
+        {
+            var remaining =
+                _browseFilterState.TagNames
+                    .Where(value =>
+                        !string.Equals(
+                            value,
+                            tag.Name,
+                            StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            if (remaining.Length
+                != _browseFilterState.TagNames.Count)
+            {
+                _browseFilterState =
+                    _browseFilterState with
+                    {
+                        RequiredTags =
+                            remaining
+                    };
+                await ApplyBrowseQueryAsync();
+            }
         }
 
         await RefreshNavigationTrackedAsync(

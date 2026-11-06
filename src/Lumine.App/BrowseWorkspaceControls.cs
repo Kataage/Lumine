@@ -1340,6 +1340,33 @@ internal sealed class BrowseWorkspaceControls : UserControl
             });
     }
 
+    // Tag deletion happens in the separate navigation manager, but the
+    // Browse toolbar owns its own live state and filter chips. Reconcile
+    // through SetStateAsync so its UI and the actual Viewer query agree.
+    public Task RemoveTagScopeAsync(
+        string tag)
+    {
+        var normalized =
+            NormalizeOptional(tag)
+            ?? throw new ArgumentException(
+                "Tag is required.",
+                nameof(tag));
+        var remaining =
+            State.TagNames
+                .Where(value =>
+                    !string.Equals(
+                        value,
+                        normalized,
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+        return SetStateAsync(
+            State with
+            {
+                RequiredTags = remaining
+            });
+    }
+
     public Task ClearTagScopesAsync() =>
         SetStateAsync(
             State with

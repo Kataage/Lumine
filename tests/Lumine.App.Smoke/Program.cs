@@ -4469,6 +4469,60 @@ try
                     && searchAfterResize.IsFocused,
                     "Escape on an empty search should remain available to surrounding navigation.");
 
+                // #635: when a selected Tag is deleted in navigation,
+                // reconcile the live Browse toolbar, not only the
+                // MainWindow query snapshot. Preserve unrelated scopes
+                // and never resurrect the deleted Tag on the next action.
+                await scopeControls.SetFolderScopeAsync(
+                    "portfolio");
+                await scopeControls.ToggleTagScopeAsync(
+                    "retained-tag");
+                await scopeControls.RemoveTagScopeAsync(
+                    "RENAMED-SHORT");
+                Dispatcher.UIThread.RunJobs();
+                var remainingTagChips =
+                    scopeControls.GetVisualDescendants()
+                        .OfType<Button>()
+                        .Where(button =>
+                            button.Classes.Contains(
+                                "lumine-chip"))
+                        .Select(button =>
+                            AutomationProperties.GetName(button))
+                        .ToArray();
+                Require(
+                    scopeControls.State.TagNames.SequenceEqual(
+                        ["retained-tag"],
+                        StringComparer.Ordinal)
+                    && renamedScopeState is not null
+                    && renamedScopeState.TagNames.SequenceEqual(
+                        ["retained-tag"],
+                        StringComparer.Ordinal)
+                    && scopeControls.State.FolderPath == "portfolio"
+                    && scopeControls.State.SearchText == string.Empty
+                    && scopeControls.State.SortOrder
+                        == sortBeforeKeyboardSearch
+                    && remainingTagChips.Any(name =>
+                        name is not null
+                        && name.Contains(
+                            "retained-tag",
+                            StringComparison.Ordinal))
+                    && !remainingTagChips.Any(name =>
+                        name is not null
+                        && name.Contains(
+                            "renamed-short",
+                            StringComparison.OrdinalIgnoreCase)),
+                    "Deleted Tag still appears in Browse chips/query, or unrelated scope was lost.");
+
+                var unchangedAfterRemoval =
+                    scopeControls.State;
+                await scopeControls.RemoveTagScopeAsync(
+                    "not-selected");
+                Require(
+                    ReferenceEquals(
+                        scopeControls.State,
+                        unchangedAfterRemoval),
+                    "Removing an unselected Tag unexpectedly reapplied the Browse query.");
+
                 scopeControls.DisposeTransientWork();
                 responsiveBrowseWindow.Close();
                 Dispatcher.UIThread.RunJobs();
