@@ -5279,6 +5279,19 @@ try
             {
                 await inspectorTagPicker.RefreshAsync(["context-tag"]);
                 Dispatcher.UIThread.RunJobs();
+                // Assigned tags are actions, not just decorative chips.
+                // Their spoken names must clearly describe removal.
+                var removeAssignedTag =
+                    inspectorTagPicker.GetVisualDescendants()
+                        .OfType<Button>()
+                        .Single(button =>
+                            AutomationProperties.GetName(button)
+                                == "付与済みタグを外す: context-tag");
+                Require(
+                    removeAssignedTag.IsEffectivelyEnabled
+                    && ToolTip.GetTip(removeAssignedTag) as string
+                        == "付与済みタグを外す: context-tag",
+                    "Inspector assigned Tag has no explicit accessible removal action.");
                 Require(
                     inspectorTagPicker.CandidateCountForSmoke == 0
                     && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
@@ -5307,8 +5320,12 @@ try
                             .Any(text => text.Text
                                 == "inspector-progressive-candidate"));
                 Require(
-                    candidateButton.Focus(),
-                    "Inspector candidate did not receive keyboard focus.");
+                    AutomationProperties.GetName(candidateButton)
+                        == "画像にタグを追加: inspector-progressive-candidate"
+                    && ToolTip.GetTip(candidateButton) as string
+                        == "画像にタグを追加: inspector-progressive-candidate"
+                    && candidateButton.Focus(),
+                    "Inspector Tag candidate lacked a spoken addition action or keyboard focus.");
                 Dispatcher.UIThread.RunJobs();
                 Require(
                     inspectorTagPicker.CandidateSurfaceVisibleForSmoke
