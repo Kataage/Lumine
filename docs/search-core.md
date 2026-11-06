@@ -92,3 +92,11 @@ CI covers:
 - 100k ASCII, Japanese two-character, and exact-tag/filter query latency
 
 Search-index construction is measured separately from Library bulk ingest so a derived feature cannot silently make the base Library ingestion path slower.
+
+## Issue #774 — bounded 100k rebuild phase diagnosis (Draft, not a performance fix)
+
+Windows strict #773 CI failed the **unchanged 100,000-asset / 12,000ms** search-index rebuild gate twice: 74,818ms and 21,617ms, while the separate 100k run without paired A-B-B-A metadata writes took about 3 seconds. Those are not equivalent warm/cold states. Rebuild code performs the complete FTS work and COMMIT inside a single transaction; the aggregate benchmark could not identify the delayed step.
+
+A **diagnostic-only Draft PR for #774** adds an optional, per-call observer to the existing production `RebuildSearchIndexAsync` path, with eight coarse boundaries: `open`, `begin`, `count`, `delete_ftscjk`, `insert_fts`, `detect_insert_cjk`, `clear_dirty`, and `commit`. The production default has no observer; no per-asset measurements, query changes, transaction splitting, WAL pragmas, checkpoint policy changes, or extra I/O inside the rebuild. The actual 100k benchmark records one wall-time and whole-process CPU delta for each stage, in ordered JSON metadata and Windows console output; the existing aggregate metric remains the sole performance acceptance check. Local Library smoke verifies all eight bounded callbacks and the post-rebuild Japanese search result.
+
+**Interpretation:** a long wall stage with low process CPU *identifies where to investigate* but cannot alone prove disk I/O, thread suspension, WAL checkpoint or lock contention. This Draft PR is **not merge-ready**: it exists to obtain one controlled Windows comparison and select a production-safe corrective change. Preserve the 12,000ms strict gate, real search semantics, multi-library isolation, cancellation, and #714's WAL durability safeguards. Do not treat instrumentation or a randomly green runner as completion of #774.
