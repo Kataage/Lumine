@@ -92,3 +92,10 @@ CI covers:
 - 100k ASCII, Japanese two-character, and exact-tag/filter query latency
 
 Search-index construction is measured separately from Library bulk ingest so a derived feature cannot silently make the base Library ingestion path slower.
+
+### Multi-library rebuild and rollback safety (Issue #774)
+
+The FTS5 contentless-delete index is **shared across libraries**. Library Core smoke uses two different registered libraries with Japanese notes, ASCII filename text and exact tags to prove that rebuilding one index scope does not remove the other library's FTS postings or CJK bigrams. A smoke-only SQLite trigger also deliberately aborts a CJK insert after the current library's FTS DELETE and INSERT, verifying that transaction rollback preserves the previously committed Japanese/tag search result. The temporary trigger is always removed after the test.
+
+These are correctness safeguards for future search performance work, not a claim that intermittent Windows 100k search-index rebuilds have met the **unchanged 12,000ms** budget. The #774 diagnostic-only draft and the separate #714 WAL durability/8-second metadata COMMIT review remain distinct.
+
