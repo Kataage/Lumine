@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Avalonia.Media;
 using Lumine.Library;
 
@@ -24,6 +27,9 @@ internal sealed class ManagedTagPicker : UserControl
     private IReadOnlyList<LibraryTagInfo> _allTags =
         Array.Empty<LibraryTagInfo>();
     private bool _busy;
+    // The large suggestions box should only appear when the user is
+    // actually editing tags, not on every image selection.
+    private bool _showCandidates;
 
     public ManagedTagPicker(
         CoreViewerRuntime runtime,
@@ -60,6 +66,57 @@ internal sealed class ManagedTagPicker : UserControl
             {
                 RenderCandidates();
                 UpdateCreateButtonState();
+            };
+        _search.GotFocus +=
+            (_, _) =>
+            {
+                _showCandidates = true;
+                RenderCandidates();
+            };
+        _search.KeyDown +=
+            (_, e) =>
+            {
+                if (e.Key != Key.Escape
+                    || (!_showCandidates
+                        && string.IsNullOrEmpty(_search.Text)))
+                {
+                    return;
+                }
+
+                // Escape dismisses tag suggestions first rather than
+                // unexpectedly closing the whole Inspector.
+                _showCandidates = false;
+                _search.Text = string.Empty;
+                RenderCandidates();
+                e.Handled = true;
+            };
+        LostFocus +=
+            (_, _) =>
+            {
+                // Moving focus from the search field to a suggestion is
+                // not dismissal. Inspect the settled focused element after
+                // routed focus changes to avoid dropping the clicked item.
+                Dispatcher.UIThread.Post(
+                    () =>
+                    {
+                        var focused =
+                            TopLevel.GetTopLevel(this)?.FocusManager
+                                ?.GetFocusedElement() as Control;
+                        if (focused is not null
+                            && (ReferenceEquals(focused, this)
+                                || focused.GetVisualAncestors()
+                                    .Contains(this)))
+                        {
+                            return;
+                        }
+
+                        if (string.IsNullOrEmpty(_search.Text))
+                        {
+                            _showCandidates = false;
+                            RenderCandidates();
+                        }
+                    },
+                    DispatcherPriority.Background);
             };
 
         _summary =
@@ -266,6 +323,10 @@ internal sealed class ManagedTagPicker : UserControl
         IReadOnlyList<string> tags,
         CancellationToken cancellationToken = default)
     {
+        // A new selected image must not inherit the previous asset's
+        // search query or keep an unrelated candidate list open.
+        _showCandidates = false;
+        _search.Text = string.Empty;
         SetSelectedTags(tags);
         _summary.Text = "タグを読み込んでいます…";
         _allTags =
@@ -443,6 +504,20 @@ internal sealed class ManagedTagPicker : UserControl
         var query =
             _search.Text?.Trim()
             ?? string.Empty;
+        if (query.Length == 0 && !_showCandidates)
+        {
+            // Keep the Inspector image-first: the search placeholder
+            // already explains how to add a tag. Do not materialize 80
+            // candidate buttons or show a redundant empty-state card.
+            _summary.Text = string.Empty;
+            _summary.IsVisible = false;
+            _candidateSurface.IsVisible = false;
+            _createSurface.IsVisible = false;
+            UpdateCreateButtonState();
+            return;
+        }
+
+        _summary.IsVisible = true;
         var candidates =
             _allTags
                 .Where(tag =>
@@ -596,7 +671,9 @@ internal sealed class ManagedTagPicker : UserControl
         RenderAssigned();
         RenderCandidates();
         await CommitAsync(before);
+        _showCandidates = false;
         _search.Text = string.Empty;
+        RenderCandidates();
     }
 
     private async Task RemoveAsync(
@@ -661,6 +738,7 @@ internal sealed class ManagedTagPicker : UserControl
                 throw;
             }
 
+            _showCandidates = false;
             _search.Text = string.Empty;
             _colorEditor.Reset();
             RenderAssigned();
