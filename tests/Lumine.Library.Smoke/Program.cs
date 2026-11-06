@@ -1759,7 +1759,7 @@ try
     var foreignAfterPrimaryRebuild = await repository.GetAssetPageAsync(
         indexedForeignLibrary.Id,
         new AssetQuery(
-            SearchText: "isolated-reference",
+            SearchText: "isolated",
             RequiredTags: ["foreign-blue"]),
         10);
     var foreignJapaneseAfterPrimaryRebuild =
