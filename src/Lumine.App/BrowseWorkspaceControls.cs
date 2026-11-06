@@ -39,6 +39,48 @@ internal sealed record BrowseFilterState(
         RequiredTags
         ?? Array.Empty<string>();
 
+    // Library Tag identities are case-insensitive. Keep navigation and
+    // Browse's live toolbar on one toggle rule so a differently cased
+    // existing scope is removed, not added as a duplicate requirement.
+    public BrowseFilterState ToggleTagScope(
+        string tag)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tag);
+        var normalized = tag.Trim();
+        var remaining =
+            TagNames
+                .Where(value =>
+                    !string.Equals(
+                        value,
+                        normalized,
+                        StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        if (remaining.Count == TagNames.Count)
+        {
+            remaining.Add(normalized);
+        }
+
+        remaining.Sort(StringComparer.Ordinal);
+        return this with { RequiredTags = remaining };
+    }
+
+    public BrowseFilterState WithoutTagScope(
+        string tag)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tag);
+        var normalized = tag.Trim();
+        return this with
+        {
+            RequiredTags = TagNames
+                .Where(value =>
+                    !string.Equals(
+                        value,
+                        normalized,
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray()
+        };
+    }
+
     public bool HasRefinements =>
         TagNames.Count > 0
         || MinRating.HasValue
@@ -1304,68 +1346,17 @@ internal sealed class BrowseWorkspaceControls : UserControl
     }
 
     public Task ToggleTagScopeAsync(
-        string tag)
-    {
-        var normalized =
-            NormalizeOptional(tag)
-            ?? throw new ArgumentException(
-                "Tag is required.",
-                nameof(tag));
-
-        var tags =
-            State.TagNames
-                .ToList();
-        var index =
-            tags.FindIndex(
-                value =>
-                    string.Equals(
-                        value,
-                        normalized,
-                        StringComparison.Ordinal));
-        if (index >= 0)
-        {
-            tags.RemoveAt(index);
-        }
-        else
-        {
-            tags.Add(normalized);
-        }
-
-        tags.Sort(
-            StringComparer.Ordinal);
-        return SetStateAsync(
-            State with
-            {
-                RequiredTags = tags
-            });
-    }
+        string tag) =>
+        SetStateAsync(
+            State.ToggleTagScope(tag));
 
     // Tag deletion happens in the separate navigation manager, but the
     // Browse toolbar owns its own live state and filter chips. Reconcile
     // through SetStateAsync so its UI and the actual Viewer query agree.
     public Task RemoveTagScopeAsync(
-        string tag)
-    {
-        var normalized =
-            NormalizeOptional(tag)
-            ?? throw new ArgumentException(
-                "Tag is required.",
-                nameof(tag));
-        var remaining =
-            State.TagNames
-                .Where(value =>
-                    !string.Equals(
-                        value,
-                        normalized,
-                        StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-
-        return SetStateAsync(
-            State with
-            {
-                RequiredTags = remaining
-            });
-    }
+        string tag) =>
+        SetStateAsync(
+            State.WithoutTagScope(tag));
 
     public Task ClearTagScopesAsync() =>
         SetStateAsync(

@@ -2939,31 +2939,8 @@ public sealed class MainWindow : Window
             return ApplyBrowseQueryAsync();
         }
 
-        var tags =
-            _browseFilterState.TagNames
-                .ToList();
-        var existing =
-            tags.FindIndex(
-                value =>
-                    string.Equals(
-                        value,
-                        tag,
-                        StringComparison.Ordinal));
-        if (existing >= 0)
-        {
-            tags.RemoveAt(existing);
-        }
-        else
-        {
-            tags.Add(tag);
-        }
-
-        tags.Sort(StringComparer.Ordinal);
         _browseFilterState =
-            _browseFilterState with
-            {
-                RequiredTags = tags
-            };
+            _browseFilterState.ToggleTagScope(tag);
         return ApplyBrowseQueryAsync();
     }
 
@@ -3129,23 +3106,14 @@ public sealed class MainWindow : Window
         }
         else
         {
-            var remaining =
-                _browseFilterState.TagNames
-                    .Where(value =>
-                        !string.Equals(
-                            value,
-                            tag.Name,
-                            StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-            if (remaining.Length
-                != _browseFilterState.TagNames.Count)
+            var withoutDeletedTag =
+                _browseFilterState.WithoutTagScope(
+                    tag.Name);
+            if (!_browseFilterState.EquivalentTo(
+                    withoutDeletedTag))
             {
                 _browseFilterState =
-                    _browseFilterState with
-                    {
-                        RequiredTags =
-                            remaining
-                    };
+                    withoutDeletedTag;
                 await ApplyBrowseQueryAsync();
             }
         }
