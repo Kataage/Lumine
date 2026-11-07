@@ -4307,6 +4307,45 @@ try
                         $"Tag manage actions overflowed at {navigationWidth:N0} DIP / 225% text scale.");
                 }
 
+                // #635: the SQLite Tag identity does not depend on
+                // display-case. All callers must use the same toggle
+                // and explicit-removal logic, even with duplicate
+                // case variants in an older in-memory filter state.
+                var variantTags = new BrowseFilterState(
+                    SearchText: "important",
+                    FolderPath: "illustrations",
+                    RequiredTags:
+                        ["Art", "art", "keep"],
+                    MinRating: 3,
+                    FavoriteOnly: true,
+                    SortOrder: AssetSortOrder.FileNameAscending);
+                var withoutVariant =
+                    variantTags.ToggleTagScope(
+                        " ART ");
+                Require(
+                    withoutVariant.TagNames.SequenceEqual(
+                        ["keep"],
+                        StringComparer.Ordinal)
+                    && withoutVariant.SearchText == "important"
+                    && withoutVariant.FolderPath == "illustrations"
+                    && withoutVariant.MinRating == 3
+                    && withoutVariant.FavoriteOnly
+                    && withoutVariant.SortOrder
+                        == AssetSortOrder.FileNameAscending,
+                    "Case-insensitive Tag toggle left duplicate conditions or lost unrelated refinements.");
+                var addedAgain =
+                    withoutVariant.ToggleTagScope(
+                        "art");
+                Require(
+                    addedAgain.TagNames.SequenceEqual(
+                        ["art", "keep"],
+                        StringComparer.Ordinal)
+                    && addedAgain.WithoutTagScope(
+                        "ART").TagNames.SequenceEqual(
+                        ["keep"],
+                        StringComparer.Ordinal),
+                    "Tag toggle/reconcile did not restore exactly one matching case-insensitive scope.");
+
                 BrowseFilterState? renamedScopeState = null;
                 var scopeControls =
                     new BrowseWorkspaceControls(
@@ -4475,6 +4514,21 @@ try
                 // and never resurrect the deleted Tag on the next action.
                 await scopeControls.SetFolderScopeAsync(
                     "portfolio");
+                await scopeControls.ToggleTagScopeAsync(
+                    "retained-tag");
+                // A selection from a differently cased navigation
+                // entry must DESELECT the tag, not add a duplicate.
+                await scopeControls.ToggleTagScopeAsync(
+                    "RETAINED-TAG");
+                Require(
+                    scopeControls.State.TagNames.SequenceEqual(
+                        ["renamed-short"],
+                        StringComparer.Ordinal)
+                    && renamedScopeState is not null
+                    && renamedScopeState.TagNames.SequenceEqual(
+                        ["renamed-short"],
+                        StringComparer.Ordinal),
+                    "Mounted Browse toggled a case-variant Tag into a second filter instead of removing it.");
                 await scopeControls.ToggleTagScopeAsync(
                     "retained-tag");
                 await scopeControls.RemoveTagScopeAsync(
