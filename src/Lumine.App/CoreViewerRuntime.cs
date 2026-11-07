@@ -88,6 +88,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
     internal ThumbnailDiagnosticsSnapshot ThumbnailPipelineDiagnostics =>
         _thumbnailPipeline.Diagnostics;
 
+    internal ThumbnailPipelineQueueSnapshot ThumbnailPipelineQueueSnapshot =>
+        _thumbnailPipeline.QueueSnapshot;
+
     internal ThumbnailStorageMode ThumbnailStorageMode =>
         _thumbnailPipeline.StorageMode;
 
