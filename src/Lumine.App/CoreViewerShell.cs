@@ -920,6 +920,7 @@ internal sealed class CoreViewerShell : UserControl
 
         var preserveInspectorDraft =
             state.InspectorVisible
+            && _contextDetail.IsDirty
             && state.PrimaryAssetId is { } restoredPrimaryId
             && _contextDetail.AssetId == restoredPrimaryId
             && primaryIndex >= 0;
@@ -2531,8 +2532,9 @@ internal sealed class CoreViewerShell : UserControl
         ViewerSelectionSnapshot selection)
     {
         // Take the one-shot query rebind decision before any await.
-        // Restoration of the same asset must update selection chrome
-        // without reloading its unsaved Notes/Rating/Tag editor.
+        // Restoration of the same asset with a dirty Inspector must
+        // preserve its draft, while a clean Inspector must refresh
+        // externally committed metadata (e.g. bulk edits).
         var preserveRestoredInspectorDraft =
             _preserveInspectorDraftDuringQueryRestore;
         var isBulk =

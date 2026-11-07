@@ -6317,6 +6317,77 @@ try
                 && shell.ContextDetail.RatingText == "★3",
                 "Query rebind regression did not restore the saved Inspector baseline after Reset.");
 
+            // #635: clean Inspector still needs to reflect a separate
+            // committed bulk metadata edit after the same-image query
+            // rebind. Suppressing all same-image reloads would show stale
+            // Rating/Notes even though the form is marked saved.
+            await shellRuntime.LibraryService.PatchUserMetadataAsync(
+                shellRuntime.Library.Id,
+                [firstContextAsset.Id],
+                new AssetUserMetadataPatch(
+                    SetRating: true,
+                    Rating: 4));
+            Require(
+                !shell.ContextDetail.IsDirty
+                && shell.ContextDetail.RatingText == "★3",
+                "Clean Inspector fixture unexpectedly reloaded before query rebind.");
+
+            var beforeCleanQueryRebind =
+                await shell.PrepareForQueryChangeAsync();
+            await shellRuntime.ApplyQueryAsync(
+                shellRuntime.CurrentQuery);
+            var refreshedIndices =
+                Enumerable.Range(
+                    0,
+                    checked((int)shellRuntime.AssetCount))
+                    .Select(static index => (long)index)
+                    .ToArray();
+            var refreshedAssetIds =
+                await shellRuntime.ViewerSession.GetAssetIdsAsync(
+                    refreshedIndices);
+            var refreshedMap =
+                refreshedIndices
+                    .Select((index, position) =>
+                        (Id: refreshedAssetIds[position], Index: index))
+                    .ToDictionary(
+                        static item => item.Id,
+                        static item => item.Index);
+            await shell.CompleteQueryChangeAsync(
+                beforeCleanQueryRebind,
+                refreshedMap);
+            for (var attempt = 0;
+                 attempt < 150
+                 && (shell.ContextDetail.IsDirty
+                     || shell.ContextDetail.RatingText != "★4");
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(10);
+            }
+
+            Require(
+                shell.ContextDetail.AssetId
+                    == firstContextAsset.Id
+                && !shell.ContextDetail.IsDirty
+                && shell.ContextDetail.RatingText == "★4"
+                && shell.ContextDetail.NotesText
+                    == "metadata-editor-search-token",
+                "Clean Inspector stayed stale after a persisted bulk metadata edit and same-image query rebind.");
+
+            shell.ContextDetail.SetEditorValuesForSmoke(
+                rating: 3,
+                favorite: false,
+                statusLabel: "reviewed",
+                colorLabel: "green",
+                tags: "context-tag, edited-tag",
+                notes: "metadata-editor-search-token");
+            var restoredRatingMetadata =
+                await shell.ContextDetail.SaveEditorAsync();
+            Require(
+                restoredRatingMetadata is { Rating: 3 }
+                && !shell.ContextDetail.IsDirty,
+                "Clean Inspector rebind regression failed to restore the original saved rating.");
+
             var secondCreativeAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(1);
             shell.GridViewer.SelectAsset(
