@@ -545,6 +545,26 @@ internal sealed class RealLibraryAcceptanceSession
 
         WriteViewerMetadata(viewer);
         WriteImageMetadata(image);
+
+        // Diagnose only at the existing strict idle-settle boundary. No
+        // source paths, filenames or additional I/O enter the evidence.
+        var inFlight = runtime.ViewerSession.SnapshotInFlightRequests();
+        var queue = runtime.ThumbnailPipelineQueueSnapshot;
+        var requestDetails = string.Join(
+            ";",
+            inFlight.Take(16).Select(static request =>
+                $"asset={request.AssetId},priority={request.Priority},waiters={request.Waiters},age_ms={request.AgeMilliseconds},completed={request.TaskCompleted},cancelled={request.CancellationRequested}"));
+        _metadata["viewer.in_flight_request_detail_count"] =
+            inFlight.Count.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.in_flight_request_details"] = requestDetails;
+        _metadata["thumbnail.queue_interactive"] =
+            queue.InteractiveQueued.ToString(CultureInfo.InvariantCulture);
+        _metadata["thumbnail.queue_foreground"] =
+            queue.ForegroundQueued.ToString(CultureInfo.InvariantCulture);
+        _metadata["thumbnail.queue_background"] =
+            queue.BackgroundQueued.ToString(CultureInfo.InvariantCulture);
+        _metadata["thumbnail.active_workers"] =
+            queue.ActiveWorkers.ToString(CultureInfo.InvariantCulture);
         WriteBackgroundTechnicalMetadata(
             ViewerTechnicalMetadataBatcher.For(
                 runtime.LibraryService).Diagnostics);
@@ -609,7 +629,7 @@ internal sealed class RealLibraryAcceptanceSession
         if (viewer.InFlightThumbnailRequests != 0)
         {
             throw new InvalidOperationException(
-                $"Viewer still had {viewer.InFlightThumbnailRequests} in-flight thumbnail request(s) after the idle-settle window.");
+                $"Viewer still had {viewer.InFlightThumbnailRequests} in-flight thumbnail request(s) after the idle-settle window. requests=[{requestDetails}] queue=interactive:{queue.InteractiveQueued},foreground:{queue.ForegroundQueued},background:{queue.BackgroundQueued},active:{queue.ActiveWorkers}.");
         }
 
         if (viewer.ActiveBitmapDecodes != 0)
