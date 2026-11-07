@@ -5316,6 +5316,11 @@ try
 
             // #503: selected swatch state must be announced, not only
             // painted as a different border around a colored dot.
+            // The picker may have received a framework ColorChanged event
+            // as its template attached. Put it in a deterministic known
+            // default state before testing changes between preset/custom.
+            inspectorTagColorEditor.Reset();
+            Dispatcher.UIThread.RunJobs();
             var presetSwatches =
                 inspectorTagColorEditor.GetVisualDescendants()
                     .OfType<Button>()
@@ -5333,7 +5338,10 @@ try
                 && presetSwatches.Any(button =>
                     AutomationProperties.GetName(button)
                         == $"タグカラー {TagColor.Default}（選択中）"),
-                "Default Tag color swatch did not expose its selected state to automation.");
+                $"Default Tag swatch accessibility mismatch after Reset: "
+                + $"color={inspectorTagColorEditor.SelectedColor}, "
+                + $"count={presetSwatches.Length}, "
+                + $"names=[{string.Join(" | ", presetSwatches.Select(AutomationProperties.GetName))}].");
 
             inspectorTagColorEditor.SelectPresetForSmoke(1);
             Require(
