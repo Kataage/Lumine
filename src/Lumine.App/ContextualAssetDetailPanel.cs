@@ -3259,11 +3259,34 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             return;
         }
 
-        _dirty = true;
-        _save.IsEnabled = true;
-        _reset.IsEnabled =
-            _loadedMetadata is not null;
-        _saveStatus.Text = "未保存の変更";
+        // Deferred editor change notifications may arrive after Reset
+        // has restored the saved values. A change event alone does not
+        // mean the current asset has an unsaved modification.
+        var saved = _loadedMetadata;
+        _dirty =
+            saved is null
+            || _ratingEditor.SelectedIndex != (saved.Rating ?? 0)
+            || (_favoriteEditor.IsChecked == true) != saved.Favorite
+            || !string.Equals(
+                _notesEditor.Text ?? string.Empty,
+                saved.Notes,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                ValueAt(StatusValues, _statusEditor.SelectedIndex),
+                saved.StatusLabel,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                ValueAt(ColorValues, _colorEditor.SelectedIndex),
+                saved.ColorLabel,
+                StringComparison.OrdinalIgnoreCase)
+            || !new HashSet<string>(
+                _tagPicker.SelectedTags,
+                StringComparer.OrdinalIgnoreCase)
+                .SetEquals(saved.Tags);
+        _save.IsEnabled = _dirty;
+        _reset.IsEnabled = _dirty && saved is not null;
+        _saveStatus.Text =
+            _dirty ? "未保存の変更" : "保存済み";
     }
 
     private void SetEditorEnabled(
