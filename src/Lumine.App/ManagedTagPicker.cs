@@ -330,13 +330,23 @@ internal sealed class ManagedTagPicker : UserControl
         _search.Text = string.Empty;
         SetSelectedTags(tags);
         _summary.Text = "タグを読み込んでいます…";
-        _allTags =
+        await RefreshCatalogAsync(cancellationToken);
+    }
+
+    // A Tag may be created in the contextual navigation while this
+    // Inspector has an unsaved metadata draft. Update only available
+    // Tag definitions; never reset the current asset, selected tags,
+    // search text, focus or form fields as RefreshAsync would.
+    internal async Task RefreshCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var updated =
             await _runtime.LibraryService.ListTagsAsync(
                 _runtime.Library.Id,
                 limit: LibraryRepository.MaxTagListLimit,
                 cancellationToken: cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-
+        _allTags = updated;
         RenderAssigned();
         RenderCandidates();
     }

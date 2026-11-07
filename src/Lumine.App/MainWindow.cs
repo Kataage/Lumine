@@ -2987,6 +2987,15 @@ public sealed class MainWindow : Window
             color);
         await RefreshNavigationTrackedAsync(
             CancellationToken.None);
+
+        // The navigation list has refreshed, but the mounted Inspector
+        // and bulk-add menu own independent candidate snapshots. Refresh
+        // those lists without reloading an unsaved Inspector draft.
+        if (ReferenceEquals(_runtime, runtime)
+            && _shell is { } shell)
+        {
+            await shell.RefreshTagCatalogsAsync();
+        }
     }
 
     private Task UpdateTagFromNavigationAsync(
