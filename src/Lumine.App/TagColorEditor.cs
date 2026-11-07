@@ -786,6 +786,16 @@ internal sealed class TagColorEditor : UserControl
                 button.Classes.Remove(
                     "selected");
             }
+
+            // The color dot and selected border are purely visual.
+            // Announce the current preset with a non-color state cue
+            // so keyboard and screen-reader users know which swatch
+            // is active even when colors are indistinguishable.
+            AutomationProperties.SetName(
+                button,
+                selected
+                    ? $"タグカラー {preset}（選択中）"
+                    : $"タグカラー {preset}");
         }
     }
 }

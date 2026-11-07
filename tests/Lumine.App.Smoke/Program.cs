@@ -5314,6 +5314,58 @@ try
                 !inspectorTagColorEditor.AdvancedVisibleForSmoke,
                 "Frequent Inspector tagging unexpectedly expanded custom color controls.");
 
+            // #503: selected swatch state must be announced, not only
+            // painted as a different border around a colored dot.
+            var presetSwatches =
+                inspectorTagColorEditor.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(button =>
+                        button.Classes.Contains(
+                            "lumine-tag-swatch"))
+                    .ToArray();
+            Require(
+                presetSwatches.Length == TagColor.Presets.Count
+                && presetSwatches.Count(button =>
+                    (AutomationProperties.GetName(button)
+                        ?? string.Empty).Contains(
+                            "（選択中）",
+                            StringComparison.Ordinal)) == 1
+                && presetSwatches.Any(button =>
+                    AutomationProperties.GetName(button)
+                        == $"タグカラー {TagColor.Default}（選択中）"),
+                "Default Tag color swatch did not expose its selected state to automation.");
+
+            inspectorTagColorEditor.SelectPresetForSmoke(1);
+            Require(
+                presetSwatches.Count(button =>
+                    (AutomationProperties.GetName(button)
+                        ?? string.Empty).Contains(
+                            "（選択中）",
+                            StringComparison.Ordinal)) == 1
+                && presetSwatches.Any(button =>
+                    AutomationProperties.GetName(button)
+                        == $"タグカラー {TagColor.Presets[1]}（選択中）")
+                && presetSwatches.Any(button =>
+                    AutomationProperties.GetName(button)
+                        == $"タグカラー {TagColor.Default}"),
+                "Changing the selected Tag color did not update the spoken selected/unselected swatches.");
+
+            inspectorTagColorEditor.SetCustomTextForSmoke(
+                "#abcdef80");
+            Require(
+                presetSwatches.All(button =>
+                    !(AutomationProperties.GetName(button)
+                        ?? string.Empty).Contains(
+                            "（選択中）",
+                            StringComparison.Ordinal)),
+                "A custom Tag color incorrectly left a preset swatch announced as selected.");
+            inspectorTagColorEditor.Reset();
+            Require(
+                presetSwatches.Any(button =>
+                    AutomationProperties.GetName(button)
+                        == $"タグカラー {TagColor.Default}（選択中）"),
+                "Resetting Tag color failed to restore accessible preset selection.");
+
             Require(
                 inspectorTagPicker.CandidateCountForSmoke == 0
                 && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
