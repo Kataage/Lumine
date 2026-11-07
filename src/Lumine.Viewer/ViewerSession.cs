@@ -11,6 +11,15 @@ public readonly record struct ViewerSourcePriorityDiagnostics(
     public long Total => Foreground + Background + Interactive;
 }
 
+// Privacy-safe request attribution for real-library acceptance. No file paths.
+public readonly record struct ViewerInFlightRequestSnapshot(
+    long AssetId,
+    ViewerThumbnailPriority Priority,
+    int Waiters,
+    long AgeMilliseconds,
+    bool TaskCompleted,
+    bool CancellationRequested);
+
 public sealed class ViewerSession : IAsyncDisposable
 {
     private readonly IViewerAssetProvider _assets;
@@ -102,6 +111,28 @@ public sealed class ViewerSession : IAsyncDisposable
                     bitmap.PeakConcurrentDecodes,
                     _lastTileLoadError);
             }
+        }
+    }
+
+    // A bounded diagnostic snapshot is sampled only on demand.
+    // The acceptance gate still relies on the original _inFlight count.
+    public IReadOnlyList<ViewerInFlightRequestSnapshot> SnapshotInFlightRequests()
+    {
+        lock (_gate)
+        {
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            return _inFlight.Select(pair =>
+                    new ViewerInFlightRequestSnapshot(
+                        pair.Key,
+                        pair.Value.Priority,
+                        pair.Value.Waiters,
+                        (long)System.Diagnostics.Stopwatch.GetElapsedTime(
+                            pair.Value.StartedAtTimestamp,
+                            now).TotalMilliseconds,
+                        pair.Value.Task.IsCompleted,
+                        pair.Value.CancellationRequested))
+                .OrderByDescending(static item => item.AgeMilliseconds)
+                .ToArray();
         }
     }
 
@@ -627,6 +658,11 @@ public sealed class ViewerSession : IAsyncDisposable
         private int _cancellationDisposed;
 
         public Task<ViewerThumbnail> Task { get; } = task;
+
+        public long StartedAtTimestamp { get; } =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+
+        public bool CancellationRequested => cancellation.IsCancellationRequested;
 
         public ViewerThumbnailPriority Priority { get; } = priority;
 

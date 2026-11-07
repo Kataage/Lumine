@@ -1,5 +1,12 @@
 namespace Lumine.Image;
 
+// Sampled on demand to distinguish queued thumbnail work from active generation.
+public readonly record struct ThumbnailPipelineQueueSnapshot(
+    int InteractiveQueued,
+    int ForegroundQueued,
+    int BackgroundQueued,
+    int ActiveWorkers);
+
 public sealed class ThumbnailPipeline : IAsyncDisposable
 {
     private readonly ThumbnailGenerator _generator;
@@ -87,6 +94,21 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
     public ThumbnailDiagnosticsSnapshot Diagnostics =>
         _generator.SnapshotDiagnostics();
+
+    public ThumbnailPipelineQueueSnapshot QueueSnapshot
+    {
+        get
+        {
+            lock (_queueGate)
+            {
+                return new ThumbnailPipelineQueueSnapshot(
+                    _interactive.Count,
+                    _foreground.Count,
+                    _background.Count,
+                    _activeWorkItems);
+            }
+        }
+    }
 
     public ThumbnailCacheMaintenanceDiagnosticsSnapshot MaintenanceDiagnostics =>
         _maintenance?.Diagnostics ?? default;
