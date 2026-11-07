@@ -6023,7 +6023,14 @@ try
                 && persistedAfterCatalogChange.Notes
                     == "metadata-editor-search-token"
                 && persistedAfterCatalogChange.Rating == 3,
-                "New Tag catalog refresh changed persisted metadata or Reset failed to restore the saved Inspector draft.");
+                $"New Tag catalog cleanup mismatch: "
+                + $"dirty={shell.ContextDetail.IsDirty}, "
+                + $"notes={shell.ContextDetail.NotesText}, "
+                + $"rating={shell.ContextDetail.RatingText}, "
+                + $"asset={shell.ContextDetail.AssetId}, "
+                + $"storedAsset={firstContextAsset.Id}, "
+                + $"storedNotes={persistedAfterCatalogChange?.Notes ?? "<null>"}, "
+                + $"storedRating={persistedAfterCatalogChange?.Rating?.ToString() ?? "<null>"}.");
 
             var secondCreativeAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(1);
