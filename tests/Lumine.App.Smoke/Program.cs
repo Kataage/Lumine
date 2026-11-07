@@ -6046,6 +6046,150 @@ try
                 + $"storedNotes={persistedAfterCatalogChange?.Notes ?? "<null>"}, "
                 + $"storedRating={persistedAfterCatalogChange?.Rating?.ToString() ?? "<null>"}.");
 
+            // #635: a Tag rename in navigation must not reload an
+            // unsaved Inspector draft. Reconcile both its persisted
+            // baseline and currently edited assigned chips.
+            var tagBeingRenamed =
+                (await shellRuntime.LibraryService.ListTagsAsync(
+                    shellRuntime.Library.Id))
+                    .Single(tag => tag.Name == "edited-tag");
+            const string temporaryRenamedTag =
+                "edited-tag-renamed-for-smoke";
+            try
+            {
+                shell.ContextDetail.SetEditorValuesForSmoke(
+                    rating: 2,
+                    favorite: true,
+                    statusLabel: "candidate",
+                    colorLabel: "purple",
+                    tags: "context-tag, edited-tag",
+                    notes: "unsaved draft survives rename");
+                await shellRuntime.LibraryService.UpdateTagAsync(
+                    shellRuntime.Library.Id,
+                    tagBeingRenamed.Id,
+                    temporaryRenamedTag,
+                    tagBeingRenamed.Color);
+                await shell.RefreshTagCatalogsAsync(
+                    "edited-tag",
+                    temporaryRenamedTag);
+                Dispatcher.UIThread.RunJobs();
+                var renamedMetadata =
+                    await shellRuntime.LibraryService.GetUserMetadataAsync(
+                        shellRuntime.Library.Id,
+                        firstContextAsset.Id);
+                Require(
+                    shell.ContextDetail.IsDirty
+                    && shell.ContextDetail.NotesText
+                        == "unsaved draft survives rename"
+                    && shell.ContextDetail.RatingText == "★2"
+                    && shell.ContextDetail.TagsText.Split(
+                        ", ", StringSplitOptions.None)
+                        .Contains(temporaryRenamedTag)
+                    && !shell.ContextDetail.TagsText.Split(
+                        ", ", StringSplitOptions.None)
+                        .Contains("edited-tag")
+                    && renamedMetadata is not null
+                    && renamedMetadata.Tags.Contains(
+                        temporaryRenamedTag),
+                    "External Tag rename reloaded the Inspector draft or left a stale saved assignment.");
+
+                var undoRenameDraft =
+                    shell.ContextDetail.GetVisualDescendants()
+                        .OfType<Button>()
+                        .Single(button =>
+                            button.Content as string == "元に戻す");
+                undoRenameDraft.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !shell.ContextDetail.IsDirty
+                    && shell.ContextDetail.NotesText
+                        == "metadata-editor-search-token"
+                    && shell.ContextDetail.TagsText.Split(
+                        ", ", StringSplitOptions.None)
+                        .Contains(temporaryRenamedTag),
+                    "Inspector Reset resurrected the old Tag name after external rename.");
+            }
+            finally
+            {
+                await shellRuntime.LibraryService.UpdateTagAsync(
+                    shellRuntime.Library.Id,
+                    tagBeingRenamed.Id,
+                    "edited-tag",
+                    tagBeingRenamed.Color);
+                await shell.RefreshTagCatalogsAsync(
+                    temporaryRenamedTag,
+                    "edited-tag");
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            // A deleted Tag might be included in an unsaved Inspector
+            // draft even though the database now rejects its identity.
+            // Remove that draft chip, never re-create it on Save.
+            const string soonDeletedTag =
+                "navigation-deleted-tag-for-smoke";
+            var createdDeletionTag =
+                await shellRuntime.LibraryService.CreateTagAsync(
+                    shellRuntime.Library.Id,
+                    soonDeletedTag,
+                    "#6366f1");
+            try
+            {
+                await shell.RefreshTagCatalogsAsync();
+                shell.ContextDetail.SetEditorValuesForSmoke(
+                    rating: 2,
+                    favorite: true,
+                    statusLabel: "candidate",
+                    colorLabel: "purple",
+                    tags:
+                        "context-tag, edited-tag, navigation-deleted-tag-for-smoke",
+                    notes: "unsaved draft survives delete");
+                await shellRuntime.LibraryService.DeleteTagAsync(
+                    shellRuntime.Library.Id,
+                    createdDeletionTag.Id);
+                await shell.RefreshTagCatalogsAsync(
+                    soonDeletedTag);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    shell.ContextDetail.IsDirty
+                    && shell.ContextDetail.NotesText
+                        == "unsaved draft survives delete"
+                    && shell.ContextDetail.RatingText == "★2"
+                    && !shell.ContextDetail.TagsText.Split(
+                        ", ", StringSplitOptions.None)
+                        .Contains(soonDeletedTag)
+                    && inspectorTagPicker.GetVisualDescendants()
+                        .OfType<Button>()
+                        .All(button =>
+                            AutomationProperties.GetName(button)
+                                != "画像にタグを追加: "
+                                    + soonDeletedTag),
+                    "External Tag deletion left stale Inspector chips/candidates or destroyed unrelated edits.");
+            }
+            finally
+            {
+                await shellRuntime.LibraryService.DeleteTagAsync(
+                    shellRuntime.Library.Id,
+                    createdDeletionTag.Id);
+                var resetAfterDelete =
+                    shell.ContextDetail.GetVisualDescendants()
+                        .OfType<Button>()
+                        .Single(button =>
+                            button.Content as string == "元に戻す");
+                resetAfterDelete.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            Require(
+                !shell.ContextDetail.IsDirty
+                && shell.ContextDetail.NotesText
+                    == "metadata-editor-search-token"
+                && shell.ContextDetail.TagsText.Split(
+                    ", ", StringSplitOptions.None)
+                    .Contains("edited-tag"),
+                "Tag deletion reconciliation did not restore the clean Inspector state.");
+
             var secondCreativeAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(1);
             shell.GridViewer.SelectAsset(

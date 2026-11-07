@@ -2170,10 +2170,13 @@ internal sealed class CoreViewerShell : UserControl
         }
     }
 
-    // Creation adds a candidate without changing metadata of any
-    // selected asset. Unlike the full Inspector reload above, this
-    // preserves uncommitted Notes/Tags/Rating and keyboard focus.
-    internal async Task RefreshTagCatalogsAsync()
+    // External Tag mutations update the shared catalog without
+    // replacing the selected Inspector asset or discarding a draft.
+    // A rename/delete additionally reconciles its changed Tag identity
+    // in the saved and current draft sets.
+    internal async Task RefreshTagCatalogsAsync(
+        string? previousName = null,
+        string? replacementName = null)
     {
         if (_detached)
         {
@@ -2184,7 +2187,16 @@ internal sealed class CoreViewerShell : UserControl
         if (_contextSurface.IsVisible
             && _grid.SelectedAssetIndex >= 0)
         {
-            await _contextDetail.RefreshTagCatalogAsync();
+            if (previousName is null)
+            {
+                await _contextDetail.RefreshTagCatalogAsync();
+            }
+            else
+            {
+                await _contextDetail.ReconcileTagMutationAsync(
+                    previousName,
+                    replacementName);
+            }
         }
     }
 
