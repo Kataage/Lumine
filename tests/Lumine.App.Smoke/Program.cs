@@ -5314,6 +5314,64 @@ try
                 !inspectorTagColorEditor.AdvancedVisibleForSmoke,
                 "Frequent Inspector tagging unexpectedly expanded custom color controls.");
 
+            // #503: selected swatch state must be announced, not only
+            // painted as a different border around a colored dot.
+            // The picker may have received a framework ColorChanged event
+            // as its template attached. Put it in a deterministic known
+            // default state before testing changes between preset/custom.
+            inspectorTagColorEditor.Reset();
+            Dispatcher.UIThread.RunJobs();
+            // The Inspector's Tag-create surface is collapsed at rest.
+            // Its buttons are real Controls but not mounted as visual
+            // descendants until the user opens that surface; inspect
+            // their attached automation names via the actual preset host.
+            var presetNames =
+                inspectorTagColorEditor.PresetAutomationNamesForSmoke;
+            Require(
+                presetNames.Count == TagColor.Presets.Count
+                && presetNames.Count(name =>
+                    (name ?? string.Empty).Contains(
+                        "（選択中）",
+                        StringComparison.Ordinal)) == 1
+                && presetNames.Contains(
+                    $"タグカラー {TagColor.Default}（選択中）"),
+                $"Default Tag swatch accessibility mismatch after Reset: "
+                + $"color={inspectorTagColorEditor.SelectedColor}, "
+                + $"count={presetNames.Count}, "
+                + $"names=[{string.Join(" | ", presetNames)}].");
+
+            inspectorTagColorEditor.SelectPresetForSmoke(1);
+            presetNames =
+                inspectorTagColorEditor.PresetAutomationNamesForSmoke;
+            Require(
+                presetNames.Count(name =>
+                    (name ?? string.Empty).Contains(
+                        "（選択中）",
+                        StringComparison.Ordinal)) == 1
+                && presetNames.Contains(
+                    $"タグカラー {TagColor.Presets[1]}（選択中）")
+                && presetNames.Contains(
+                    $"タグカラー {TagColor.Default}"),
+                "Changing the selected Tag color did not update the spoken selected/unselected swatches.");
+
+            inspectorTagColorEditor.SetCustomTextForSmoke(
+                "#abcdef80");
+            presetNames =
+                inspectorTagColorEditor.PresetAutomationNamesForSmoke;
+            Require(
+                presetNames.All(name =>
+                    !(name ?? string.Empty).Contains(
+                        "（選択中）",
+                        StringComparison.Ordinal)),
+                "A custom Tag color incorrectly left a preset swatch announced as selected.");
+            inspectorTagColorEditor.Reset();
+            presetNames =
+                inspectorTagColorEditor.PresetAutomationNamesForSmoke;
+            Require(
+                presetNames.Contains(
+                    $"タグカラー {TagColor.Default}（選択中）"),
+                "Resetting Tag color failed to restore accessible preset selection.");
+
             Require(
                 inspectorTagPicker.CandidateCountForSmoke == 0
                 && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
