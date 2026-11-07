@@ -53,6 +53,10 @@ internal sealed class CoreViewerShell : UserControl
     private Control? _focusedViewInspectorReturnControl;
     private bool _compactInspectorLayout;
     private bool _inspectorPinned;
+    // RestoreSelection emits a synchronous SelectionChanged even when
+    // a query rebind keeps the same selected asset. Capture this only
+    // for that restore event, not subsequent user selection changes.
+    private bool _preserveInspectorDraftDuringQueryRestore;
     private bool _detached;
 
     public CoreViewerShell(
@@ -914,9 +918,25 @@ internal sealed class CoreViewerShell : UserControl
                     ? -1
                     : restoredIndices[0];
 
-        _grid.RestoreSelection(
-            restoredIndices,
-            primaryIndex);
+        var preserveInspectorDraft =
+            state.InspectorVisible
+            && state.PrimaryAssetId is { } restoredPrimaryId
+            && _contextDetail.AssetId == restoredPrimaryId
+            && primaryIndex >= 0;
+
+        _preserveInspectorDraftDuringQueryRestore =
+            preserveInspectorDraft;
+        try
+        {
+            _grid.RestoreSelection(
+                restoredIndices,
+                primaryIndex);
+        }
+        finally
+        {
+            _preserveInspectorDraftDuringQueryRestore =
+                false;
+        }
 
         if (state.InspectorVisible
             && primaryIndex < 0)
@@ -2510,6 +2530,11 @@ internal sealed class CoreViewerShell : UserControl
         object? sender,
         ViewerSelectionSnapshot selection)
     {
+        // Take the one-shot query rebind decision before any await.
+        // Restoration of the same asset must update selection chrome
+        // without reloading its unsaved Notes/Rating/Tag editor.
+        var preserveRestoredInspectorDraft =
+            _preserveInspectorDraftDuringQueryRestore;
         var isBulk =
             selection.Count > 1;
         _selectionBar.IsVisible =
@@ -2603,7 +2628,8 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        if (_contextSurface.IsVisible)
+        if (_contextSurface.IsVisible
+            && !preserveRestoredInspectorDraft)
         {
             try
             {
