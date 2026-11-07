@@ -1271,6 +1271,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             ? Task.CompletedTask
             : ShowAssetAsync(_currentAsset);
 
+    // Navigation Tag creation changes candidate choices, not the
+    // Inspector's unsaved per-asset editor values or current tab.
+    internal Task RefreshTagCatalogAsync() =>
+        _assetId > 0
+            ? _tagPicker.RefreshCatalogAsync()
+            : Task.CompletedTask;
+
     internal string TagsText =>
         string.Join(
             ", ",

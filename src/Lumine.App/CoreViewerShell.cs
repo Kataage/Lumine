@@ -2170,6 +2170,24 @@ internal sealed class CoreViewerShell : UserControl
         }
     }
 
+    // Creation adds a candidate without changing metadata of any
+    // selected asset. Unlike the full Inspector reload above, this
+    // preserves uncommitted Notes/Tags/Rating and keyboard focus.
+    internal async Task RefreshTagCatalogsAsync()
+    {
+        if (_detached)
+        {
+            return;
+        }
+
+        await RefreshBulkTagChoicesAsync();
+        if (_contextSurface.IsVisible
+            && _grid.SelectedAssetIndex >= 0)
+        {
+            await _contextDetail.RefreshTagCatalogAsync();
+        }
+    }
+
     private async Task RefreshBulkTagChoicesAsync()
     {
         try

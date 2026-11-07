@@ -5935,6 +5935,79 @@ try
                 && !shell.ContextDetail.IsDirty,
                 "Contextual metadata save did not notify the browse/navigation refresh path exactly once.");
 
+            // #635: navigation creation changes Tag choices while the
+            // Inspector is still editing the same asset. Reload the
+            // definitions without a destructive ShowAssetAsync reset.
+            const string newlyManagedTag =
+                "navigation-live-tag-candidate";
+            var newlyCreatedTag =
+                await shellRuntime.LibraryService.CreateTagAsync(
+                    shellRuntime.Library.Id,
+                    newlyManagedTag,
+                    "#6366f1");
+            try
+            {
+                shell.ContextDetail.SetEditorValuesForSmoke(
+                    rating: 2,
+                    favorite: true,
+                    statusLabel: "candidate",
+                    colorLabel: "purple",
+                    tags: "context-tag, edited-tag",
+                    notes: "unsaved draft survives new tag");
+                inspectorTagPicker.SetSearchForSmoke(
+                    newlyManagedTag);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateCountForSmoke == 0
+                    && shell.ContextDetail.IsDirty,
+                    "Tag candidate snapshot unexpectedly updated without notification or lost the pending draft.");
+
+                await shell.RefreshTagCatalogsAsync();
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    inspectorTagPicker.CandidateCountForSmoke == 1
+                    && inspectorTagPicker.GetVisualDescendants()
+                        .OfType<Button>()
+                        .Any(button =>
+                            AutomationProperties.GetName(button)
+                                == "画像にタグを追加: "
+                                    + newlyManagedTag)
+                    && shell.ContextDetail.IsDirty
+                    && shell.ContextDetail.NotesText
+                        == "unsaved draft survives new tag"
+                    && shell.ContextDetail.RatingText == "★2"
+                    && shell.ContextDetail.ColorLabelForSmoke
+                        == "purple"
+                    && shell.ContextDetail.TagsText.Contains(
+                        "context-tag",
+                        StringComparison.Ordinal)
+                    && shell.ContextDetail.TagsText.Contains(
+                        "edited-tag",
+                        StringComparison.Ordinal)
+                    && inspectorTagPicker.GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .Single(box => box.PlaceholderText
+                            == "タグを検索・追加")
+                        .Text == newlyManagedTag,
+                    "Refreshing external Tag choices lost an Inspector draft or failed to show the newly created candidate.");
+            }
+            finally
+            {
+                await shellRuntime.LibraryService.DeleteTagAsync(
+                    shellRuntime.Library.Id,
+                    newlyCreatedTag.Id);
+                await shell.RefreshTagCatalogsAsync();
+                await shell.ContextDetail.InvokeRetryForSmokeAsync();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            Require(
+                !shell.ContextDetail.IsDirty
+                && shell.ContextDetail.NotesText
+                    == "metadata-editor-search-token"
+                && shell.ContextDetail.RatingText == "★3",
+                "Inspector draft cleanup failed to restore the persisted metadata after Tag catalog test.");
+
             var secondCreativeAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(1);
             shell.GridViewer.SelectAsset(
