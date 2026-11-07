@@ -1278,6 +1278,63 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             ? _tagPicker.RefreshCatalogAsync()
             : Task.CompletedTask;
 
+    // An external Tag rename/delete has already committed to SQLite.
+    // Reconcile ONLY that Tag identity in both the saved baseline and
+    // the unsaved draft. Reloading the whole asset here would discard
+    // unrelated pending Notes, Rating and Color edits.
+    internal async Task ReconcileTagMutationAsync(
+        string previousName,
+        string? replacementName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            previousName);
+
+        var assetId = _assetId;
+        if (assetId <= 0)
+        {
+            return;
+        }
+
+        await _tagPicker.RefreshCatalogAsync();
+        if (_assetId != assetId
+            || _loadedMetadata is not { } saved)
+        {
+            return;
+        }
+
+        var draftTags = ReconcileTagNames(
+            _tagPicker.SelectedTags,
+            previousName,
+            replacementName);
+        _loadedMetadata = saved with
+        {
+            Tags = ReconcileTagNames(
+                saved.Tags,
+                previousName,
+                replacementName)
+        };
+        _tagPicker.SetSelectedTags(draftTags);
+        MarkDirty();
+    }
+
+    private static IReadOnlyList<string> ReconcileTagNames(
+        IReadOnlyList<string> tags,
+        string previousName,
+        string? replacementName) =>
+        tags
+            .Select(tag =>
+                string.Equals(
+                    tag,
+                    previousName,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? replacementName
+                    : tag)
+            .Where(static tag =>
+                !string.IsNullOrWhiteSpace(tag))
+            .Select(static tag => tag!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
     internal string TagsText =>
         string.Join(
             ", ",

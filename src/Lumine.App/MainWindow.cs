@@ -3063,9 +3063,15 @@ public sealed class MainWindow : Window
         await RefreshNavigationTrackedAsync(
             CancellationToken.None);
 
-        if (_shell is not null)
+        // Tag rename is already committed. Only rewrite the changed
+        // Tag identity in the live Inspector draft; a full asset reload
+        // here would lose unsaved non-Tag edits.
+        if (ReferenceEquals(_runtime, runtime)
+            && _shell is { } shell)
         {
-            await _shell.SyncTagConsumersAsync();
+            await shell.RefreshTagCatalogsAsync(
+                tag.Name,
+                updated.Name);
         }
     }
 
@@ -3129,6 +3135,16 @@ public sealed class MainWindow : Window
 
         await RefreshNavigationTrackedAsync(
             CancellationToken.None);
+
+        // The Browse filter chips were reconciled above. Keep the
+        // separate bulk and Inspector Tag catalogs consistent too,
+        // without resurrecting a deleted Tag from an unsaved draft.
+        if (ReferenceEquals(_runtime, runtime)
+            && _shell is { } shell)
+        {
+            await shell.RefreshTagCatalogsAsync(
+                tag.Name);
+        }
     }
 
     private async Task OnBrowseFiltersChangedAsync(
