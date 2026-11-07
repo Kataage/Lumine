@@ -5935,6 +5935,20 @@ try
                 && !shell.ContextDetail.IsDirty,
                 "Contextual metadata save did not notify the browse/navigation refresh path exactly once.");
 
+            // A repeated edit event with values identical to the saved
+            // model must not resurrect an unsaved warning or enable
+            // Save/Reset; this also guards the deferred event after Reset.
+            shell.ContextDetail.SetEditorValuesForSmoke(
+                rating: 3,
+                favorite: false,
+                statusLabel: "reviewed",
+                colorLabel: "green",
+                tags: "context-tag, edited-tag",
+                notes: "metadata-editor-search-token");
+            Require(
+                !shell.ContextDetail.IsDirty,
+                "Unchanged Inspector values incorrectly triggered an unsaved warning.");
+
             // #635: navigation creation changes Tag choices while the
             // Inspector is still editing the same asset. Reload the
             // definitions without a destructive ShowAssetAsync reset.
