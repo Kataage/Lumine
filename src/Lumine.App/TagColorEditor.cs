@@ -398,6 +398,17 @@ internal sealed class TagColorEditor : UserControl
     internal int PresetCountForSmoke =>
         _presetHost.Children.Count;
 
+    // Hidden color creation surfaces are not necessarily part of the
+    // mounted visual descendants until opened. Inspect the real swatch
+    // Buttons' attached automation properties without forcing a flyout
+    // open or populating a heavy visual picker.
+    internal IReadOnlyList<string?> PresetAutomationNamesForSmoke =>
+        _presetHost.Children
+            .OfType<Button>()
+            .Select(static button =>
+                AutomationProperties.GetName(button))
+            .ToArray();
+
     internal bool UsesSharedThemeForSmoke =>
         _preview.Classes.Contains(
             "lumine-tag-preview")
