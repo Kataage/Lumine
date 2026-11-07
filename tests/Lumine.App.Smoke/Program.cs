@@ -5993,20 +5993,37 @@ try
             }
             finally
             {
+                // Exercise the real user-facing Reset action instead of
+                // starting another asynchronous image/preview load solely
+                // to clean up this test's unsaved metadata draft.
+                var resetDraft =
+                    shell.ContextDetail.GetVisualDescendants()
+                        .OfType<Button>()
+                        .Single(button =>
+                            button.Content as string == "元に戻す");
+                resetDraft.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent));
                 await shellRuntime.LibraryService.DeleteTagAsync(
                     shellRuntime.Library.Id,
                     newlyCreatedTag.Id);
                 await shell.RefreshTagCatalogsAsync();
-                await shell.ContextDetail.InvokeRetryForSmokeAsync();
                 Dispatcher.UIThread.RunJobs();
             }
 
+            var persistedAfterCatalogChange =
+                await shellRuntime.LibraryService.GetUserMetadataAsync(
+                    shellRuntime.Library.Id,
+                    firstContextAsset.Id);
             Require(
                 !shell.ContextDetail.IsDirty
                 && shell.ContextDetail.NotesText
                     == "metadata-editor-search-token"
-                && shell.ContextDetail.RatingText == "★3",
-                "Inspector draft cleanup failed to restore the persisted metadata after Tag catalog test.");
+                && shell.ContextDetail.RatingText == "★3"
+                && persistedAfterCatalogChange is not null
+                && persistedAfterCatalogChange.Notes
+                    == "metadata-editor-search-token"
+                && persistedAfterCatalogChange.Rating == 3,
+                "New Tag catalog refresh changed persisted metadata or Reset failed to restore the saved Inspector draft.");
 
             var secondCreativeAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(1);
