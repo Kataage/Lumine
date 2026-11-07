@@ -6248,6 +6248,75 @@ try
                     .Contains("edited-tag"),
                 "Tag deletion reconciliation did not restore the clean Inspector state.");
 
+            // #635: re-applying a Browse query rebinds the session and
+            // raises SelectionChanged even when the selected image ID
+            // remains identical. This must not reload pending Inspector
+            // Notes/Rating edits; a different selected image still uses
+            // the normal live selection-change reload.
+            shell.ContextDetail.SetEditorValuesForSmoke(
+                rating: 2,
+                favorite: true,
+                statusLabel: "candidate",
+                colorLabel: "purple",
+                tags: "context-tag, edited-tag",
+                notes: "unsaved draft survives query rebind");
+            Require(
+                shell.ContextDetail.IsDirty,
+                "Query rebind regression did not establish an unsaved Inspector draft.");
+            var beforeQueryRebind =
+                await shell.PrepareForQueryChangeAsync();
+            Require(
+                beforeQueryRebind.PrimaryAssetId
+                    == firstContextAsset.Id,
+                "Query rebind regression selected a different Inspector asset before rebind.");
+            await shellRuntime.ApplyQueryAsync(
+                shellRuntime.CurrentQuery);
+            var reboundIndices =
+                Enumerable.Range(
+                    0,
+                    checked((int)shellRuntime.AssetCount))
+                    .Select(static index => (long)index)
+                    .ToArray();
+            var reboundAssetIds =
+                await shellRuntime.ViewerSession.GetAssetIdsAsync(
+                    reboundIndices);
+            var reboundMap =
+                reboundIndices
+                    .Select((index, position) =>
+                        (Id: reboundAssetIds[position], Index: index))
+                    .ToDictionary(
+                        static item => item.Id,
+                        static item => item.Index);
+            await shell.CompleteQueryChangeAsync(
+                beforeQueryRebind,
+                reboundMap);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.AssetId == firstContextAsset.Id
+                && shell.ContextDetail.IsDirty
+                && shell.ContextDetail.NotesText
+                    == "unsaved draft survives query rebind"
+                && shell.ContextDetail.RatingText == "★2"
+                && shell.ContextDetail.TagsText.Contains(
+                    "edited-tag",
+                    StringComparison.Ordinal),
+                "Restoring the same selected asset during Browse query rebind discarded the unsaved Inspector draft.");
+
+            var resetAfterRebind =
+                shell.ContextDetail.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        button.Content as string == "元に戻す");
+            resetAfterRebind.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !shell.ContextDetail.IsDirty
+                && shell.ContextDetail.NotesText
+                    == "metadata-editor-search-token"
+                && shell.ContextDetail.RatingText == "★3",
+                "Query rebind regression did not restore the saved Inspector baseline after Reset.");
+
             var secondCreativeAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(1);
             shell.GridViewer.SelectAsset(
