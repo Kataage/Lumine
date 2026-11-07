@@ -853,6 +853,17 @@ internal static class Program
         await thumbnailProvider.Started.WaitAsync(
             TimeSpan.FromSeconds(2));
 
+        var pending = session.SnapshotInFlightRequests();
+        Require(
+            pending.Count == 1
+            && pending[0].AssetId == asset.Id
+            && pending[0].Priority == ViewerThumbnailPriority.Foreground
+            && pending[0].Waiters == 2
+            && pending[0].AgeMilliseconds >= 0
+            && !pending[0].TaskCompleted
+            && !pending[0].CancellationRequested,
+            "In-flight snapshot did not attribute both coalesced foreground waiters.");
+
         firstCancellation.Cancel();
         secondCancellation.Cancel();
 
@@ -871,6 +882,8 @@ internal static class Program
         Require(diagnostics.ThumbnailRequestsCoalesced >= 1, "Coalescing diagnostic was not recorded.");
         Require(diagnostics.ThumbnailRequestsCancelled >= 1, "Stale shared thumbnail request was not cancelled.");
         Require(diagnostics.InFlightThumbnailRequests == 0, "Cancelled thumbnail request remained in-flight.");
+        Require(session.SnapshotInFlightRequests().Count == 0,
+            "Cancelled shared request remained in the forensic snapshot.");
         Require(thumbnailProvider.Cancelled > 0, "Provider did not observe cancellation.");
     }
 
