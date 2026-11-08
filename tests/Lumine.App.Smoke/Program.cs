@@ -9737,6 +9737,12 @@ try
                             firstUseFooter.Children
                                 .OfType<TextBlock>()
                                 .Single();
+                        if (visualOutputDirectory is not null)
+                        {
+                            CaptureVisualEvidence(
+                                publicationRegistration,
+                                "publication-guided-new-account");
+                        }
                         firstUseSave.RaiseEvent(
                             new RoutedEventArgs(
                                 Button.ClickEvent));
@@ -9747,12 +9753,6 @@ try
                                 "公開先サービス（必須）を指定してください。",
                             "Publication accepted an empty required destination, or failed to show its specific error.");
 
-                        if (visualOutputDirectory is not null)
-                        {
-                            CaptureVisualEvidence(
-                                publicationRegistration,
-                                "publication-guided-new-account");
-                        }
                         newDestination.Text = "Pixiv";
                         newAccount.Text = "smoke-account";
                         register.RaiseEvent(
@@ -9932,8 +9932,8 @@ try
                                 .GetVisualDescendants()
                                 .OfType<Button>()
                                 .Count(button =>
-                                    button.Content as string
-                                        is "公開記録を保存" or "キャンセル"
+                                    (button.Content as string
+                                        is "公開記録を保存" or "キャンセル")
                                     && button.IsEffectivelyVisible) == 2,
                             "Publication footer was clipped at 500x360.");
 
