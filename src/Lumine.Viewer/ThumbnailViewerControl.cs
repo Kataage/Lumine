@@ -54,7 +54,10 @@ public readonly record struct ViewerReadyTileTiming(
     double MetadataMilliseconds,
     double ThumbnailSourceMilliseconds,
     double BitmapAcquireMilliseconds,
-    ViewerThumbnailSourceTimings? SourceTimings = null);
+    ViewerThumbnailSourceTimings? SourceTimings = null,
+    string? SourceFormat = null,
+    long SourceRawPixels = 0,
+    long SourceFileBytes = 0);
 
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Design",
@@ -4118,7 +4121,12 @@ public sealed class ThumbnailViewerControl : UserControl
                             Stopwatch.GetElapsedTime(
                                 afterSource,
                                 afterBitmap).TotalMilliseconds,
-                            thumbnail.SourceTimings);
+                            thumbnail.SourceTimings,
+                            thumbnail.SourceMetadata?.Format,
+                            thumbnail.SourceMetadata is { } sourceInfo
+                                ? (long)sourceInfo.RawWidth * sourceInfo.RawHeight
+                                : 0,
+                            asset.FileSize);
                         _owner.RecordTileReady(
                             _loadStartedAt,
                             warm: false,
