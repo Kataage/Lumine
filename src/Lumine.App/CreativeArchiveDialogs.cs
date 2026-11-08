@@ -946,7 +946,7 @@ internal static class CreativeArchiveDialogs
                                     ? item.DisplayName
                                     : $"{item.DisplayName} · {item.AccountIdentifier}"))
                     .Append(
-                        "別のアカウントを入力")
+                        "新しいアカウントを登録")
                     .ToArray();
             account.SelectedIndex =
                 selectedAccounts.Length > 0
@@ -1246,7 +1246,16 @@ internal static class CreativeArchiveDialogs
                             destinationValue))
                     {
                         status.Text =
-                            "公開先を入力してください。";
+                            "公開先サービス（必須）を指定してください。";
+                        if (destinationProfile is null)
+                        {
+                            customDestination.Focus();
+                        }
+                        else
+                        {
+                            destination.Focus();
+                        }
+
                         return null;
                     }
 
@@ -1257,7 +1266,8 @@ internal static class CreativeArchiveDialogs
                             out var publishedAt))
                     {
                         status.Text =
-                            "公開日時を読み取れません。";
+                            "公開日時（必須）を確認してください。";
+                        published.Focus();
                         return null;
                     }
 
@@ -1349,7 +1359,8 @@ internal static class CreativeArchiveDialogs
                         externalUrl.Text ?? string.Empty,
                         platformMetadata,
                         orderEditor.OrderedAssetIds);
-                }));
+                },
+                "公開記録を保存"));
         dialog.Content = CreateDialogForm(stack);
         return dialog;
     }
@@ -1641,7 +1652,8 @@ internal static class CreativeArchiveDialogs
 
     private static StackPanel CreateButtons<T>(
         Window dialog,
-        Func<T?> create)
+        Func<T?> create,
+        string saveLabel = "保存")
         where T : class
     {
         var cancel =
@@ -1658,7 +1670,7 @@ internal static class CreativeArchiveDialogs
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "保存"
+                    Content = saveLabel
                 });
         save.Click +=
             (_, _) =>
