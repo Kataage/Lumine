@@ -70,7 +70,7 @@ internal sealed class CreativePublicationPixivMetadataEditor
             new TextBlock
             {
                 Text =
-                    "Pixivの年齢制限",
+                    "Pixivの年齢制限（任意）",
                 Foreground =
                     LumineDesign.Foreground,
                 FontSize =
@@ -98,7 +98,7 @@ internal sealed class CreativePublicationPixivMetadataEditor
                 new CheckBox
                 {
                     Content =
-                        "AI生成作品として登録",
+                        "AI生成作品として登録（任意）",
                     IsChecked = true
                 });
         AutomationProperties.SetName(
@@ -843,7 +843,7 @@ internal static class CreativeArchiveDialogs
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "このアカウントを保存",
+                    Content = "アカウントを登録して使用",
                     IsVisible = registerAccount is not null
                 });
         AutomationProperties.SetName(
@@ -885,22 +885,24 @@ internal static class CreativeArchiveDialogs
 
         var newDestinationField =
             CreatePublicationField(
-                "新しい公開先名",
+                "新しい公開先名（必須）",
                 customDestination);
         var savedAccountField =
             CreatePublicationField(
-                "投稿アカウント",
+                "投稿アカウント（任意）",
                 account);
         var newAccountField =
             CreatePublicationField(
-                "新しいアカウント名・ID",
+                "新しいアカウント名・ID（任意）",
                 customAccount);
-        var technicalMetadata = new Expander
-        {
-            Header = "サイト固有情報（JSON・任意）",
-            IsExpanded = false,
-            Content = customMetadata
-        };
+        var technicalMetadata =
+            CreatePublicationField(
+                "サイト固有情報（任意・JSON）",
+                customMetadata);
+        // Keep the registration action with its input, not as an
+        // unrelated primary-form action far from the field.
+        newAccountField.Children.Add(saveAccount);
+        newAccountField.Children.Add(accountRegistrationStatus);
 
         PublicationDestinationInfo? SelectedDestinationProfile() =>
             destination.SelectedIndex >= 0
@@ -1134,28 +1136,98 @@ internal static class CreativeArchiveDialogs
             620,
             800);
         var stack = CreateFormStack(string.Empty);
-        AddPublicationField(stack, "公開先サービス", destination);
-        stack.Children.Add(newDestinationField);
-        AddPublicationField(stack, "関連する作品（任意）", work);
-        stack.Children.Add(savedAccountField);
-        stack.Children.Add(newAccountField);
-        stack.Children.Add(saveAccount);
-        stack.Children.Add(accountRegistrationStatus);
-        AddPublicationField(stack, "投稿タイトル", title);
-        AddPublicationField(stack, "投稿本文", body);
-        AddPublicationField(stack, "投稿タグ", tags);
-        AddPublicationField(stack, "公開日時", published);
-        AddPublicationField(stack, "投稿ID（任意）", externalId);
-        AddPublicationField(stack, "投稿URL（任意）", externalUrl);
-        stack.Children.Add(pixivMetadata);
-        stack.Children.Add(technicalMetadata);
+
+        // Essential path: where / when / which images.
+        // The optional archive metadata lives behind one disclosure,
+        // so the first-run form stays focused even on small screens.
+        var destinationSection =
+            CreatePublicationSection(
+                stack,
+                "1. 公開先とアカウント");
+        AddPublicationField(
+            destinationSection,
+            "公開先サービス（必須）",
+            destination);
+        destinationSection.Children.Add(newDestinationField);
+        destinationSection.Children.Add(savedAccountField);
+        destinationSection.Children.Add(newAccountField);
+
+        var contentSection =
+            CreatePublicationSection(
+                stack,
+                "2. 投稿内容");
+        AddPublicationField(
+            contentSection,
+            "公開日時（必須）",
+            published);
+        AddPublicationField(
+            contentSection,
+            "投稿タイトル（任意）",
+            title);
+        AddPublicationField(
+            contentSection,
+            "投稿本文（任意）",
+            body);
+        AddPublicationField(
+            contentSection,
+            "投稿タグ（任意）",
+            tags);
+        contentSection.Children.Add(pixivMetadata);
+
+        var imageSection =
+            CreatePublicationSection(
+                stack,
+                "3. 投稿画像");
         var orderEditor =
             new CreativePublicationOrderEditor(
                 publicationAssets);
+        if (publicationAssets.Count == 1)
+        {
+            AddPublicationField(
+                imageSection,
+                "選択画像（必須・1枚）",
+                new TextBlock
+                {
+                    Text = publicationAssets[0].DisplayName,
+                    Foreground = LumineDesign.Foreground,
+                    FontSize = LumineDesign.BodyFontSize,
+                    TextWrapping =
+                        Avalonia.Media.TextWrapping.Wrap
+                });
+        }
+        else
+        {
+            AddPublicationField(
+                imageSection,
+                $"投稿画像の順番（必須・{publicationAssets.Count:N0}枚）",
+                orderEditor);
+        }
+
+        var extraFields = new StackPanel
+        {
+            Spacing = LumineDesign.Space12,
+            Margin = new Thickness(12, 8, 12, 12)
+        };
         AddPublicationField(
-            stack,
-            "投稿画像の順番（上から順）",
-            orderEditor);
+            extraFields,
+            "関連する作品（任意）",
+            work);
+        AddPublicationField(
+            extraFields,
+            "投稿ID（任意）",
+            externalId);
+        AddPublicationField(
+            extraFields,
+            "投稿URL（任意）",
+            externalUrl);
+        extraFields.Children.Add(technicalMetadata);
+        stack.Children.Add(
+            new Expander
+            {
+                Header = "その他の情報（任意）",
+                IsExpanded = false,
+                Content = extraFields
+            });
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -1533,6 +1605,39 @@ internal static class CreativeArchiveDialogs
         string label,
         Control control) =>
         stack.Children.Add(CreatePublicationField(label, control));
+
+    private static StackPanel CreatePublicationSection(
+        Panel form,
+        string title)
+    {
+        var fields = new StackPanel
+        {
+            Spacing = LumineDesign.Space12
+        };
+        fields.Children.Add(
+            new TextBlock
+            {
+                Text = title,
+                FontWeight =
+                    Avalonia.Media.FontWeight.SemiBold,
+                FontSize = LumineDesign.DialogTitleFontSize,
+                Foreground = LumineDesign.Foreground
+            });
+        var section = new Border
+        {
+            Background = LumineDesign.Surface,
+            BorderBrush = LumineDesign.Border,
+            BorderThickness = new Thickness(1),
+            CornerRadius =
+                new CornerRadius(LumineDesign.PanelRadius),
+            Padding = new Thickness(16),
+            Child = fields
+        };
+        section.Classes.Add("lumine-publication-section");
+        AutomationProperties.SetName(section, title);
+        form.Children.Add(section);
+        return fields;
+    }
 
     private static StackPanel CreateButtons<T>(
         Window dialog,
