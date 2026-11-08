@@ -101,6 +101,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private long _lookaheadSourcesComplete;
     private long _lookaheadPredecodeEligible;
     private long _lookaheadBitmapsPredecoded;
+    private long _idleProgressiveRowsPrepared;
     private long _lookaheadLastRow = -1;
     private long _lookaheadLastPredecodeStartIndex = -1;
     private int _lookaheadLastScheduledDirection = 1;
@@ -1743,6 +1744,9 @@ public sealed class ThumbnailViewerControl : UserControl
     internal int LastLookaheadOffsetDirectionForSmoke =>
         _lastLookaheadOffsetDirection;
 
+    internal long IdleProgressiveRowsPreparedForSmoke =>
+        Interlocked.Read(ref _idleProgressiveRowsPrepared);
+
     public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
         new(
             _lookaheadScheduleCount,
@@ -2560,6 +2564,8 @@ public sealed class ThumbnailViewerControl : UserControl
                         }
 
                         var index = checked(row * columns);
+                        var preparedBefore = Interlocked.Read(
+                            ref _lookaheadBitmapsPredecoded);
                         await PredecodeNextRowAsync(
                             session,
                             index,
@@ -2567,6 +2573,12 @@ public sealed class ThumbnailViewerControl : UserControl
                                 session.Count - index,
                                 columns)),
                             cancellationToken).ConfigureAwait(false);
+                        if (Interlocked.Read(
+                                ref _lookaheadBitmapsPredecoded) > preparedBefore)
+                        {
+                            Interlocked.Increment(
+                                ref _idleProgressiveRowsPrepared);
+                        }
                     }
 
                     // Preserve the *next* row as MRU rather than allowing
