@@ -53,6 +53,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyIdleProgressesWithoutScrollingAsync(
                         thumbnailPath);
+                    await VerifyFarSeekResumesIdlePrefetchAsync(
+                        thumbnailPath);
                     await VerifyFarSeekForegroundPrecedesSpeculationAsync(
                         thumbnailPath);
                     await VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
@@ -1094,8 +1096,8 @@ internal static class Program
                 TileSpacing = 8,
                 PrefetchRows = 2,
                 PrefetchDelay = TimeSpan.FromMilliseconds(1),
-                DecodedBitmapEntryLimit = 256,
-                DecodedBitmapByteLimit = 256L * 1024 * 1024
+                DecodedBitmapEntryLimit = 512,
+                DecodedBitmapByteLimit = 512L * 1024 * 1024
             });
         var viewer = new ThumbnailViewerControl(session);
         var window = new Window
@@ -1129,12 +1131,17 @@ internal static class Program
             var lastBefore = viewer.LastVisibleAssetIndex;
             var scheduleBefore = viewer.LookaheadDiagnostics.Scheduled;
 
-            // There is no ScrollToAsset, wheel or offset mutation here.
-            // Once the near pass finishes, the quiet worker should use
-            // spare bitmap capacity for at least one additional row.
+            // A single idle schedule must advance past the previous
+            // two-viewport ceiling without another wheel or offset event.
+            // Avoid multiplying visual row count by a viewport's columns.
+            var firstVisibleRow = (visibleBefore ?? 0) / viewer.Columns;
+            var lastVisibleRow = (lastBefore ?? 0) / viewer.Columns;
+            var legacyTwoViewportRows = Math.Min(
+                96L, 2L * (lastVisibleRow - firstVisibleRow + 1));
             for (var attempt = 0;
-                 attempt < 2_500
-                 && viewer.IdleProgressiveRowsPreparedForSmoke == 0;
+                 attempt < 4_500
+                 && viewer.IdleProgressiveRowsPreparedForSmoke
+                    <= legacyTwoViewportRows;
                  attempt++)
             {
                 Dispatcher.UIThread.RunJobs();
@@ -1142,11 +1149,100 @@ internal static class Program
             }
 
             Require(
-                viewer.IdleProgressiveRowsPreparedForSmoke > 0
+                viewer.IdleProgressiveRowsPreparedForSmoke
+                    > legacyTwoViewportRows
                 && viewer.FirstVisibleAssetIndex == visibleBefore
                 && viewer.LastVisibleAssetIndex == lastBefore
                 && viewer.LookaheadDiagnostics.Scheduled == scheduleBefore,
-                "Idle progressive prefetch did not decode additional offscreen rows without scrolling, or unexpectedly changed the viewport.");
+                "Idle progressive prefetch stopped at the legacy two-viewport ceiling or unexpectedly changed the viewport.");
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    private static async Task VerifyFarSeekResumesIdlePrefetchAsync(
+        string thumbnailPath)
+    {
+        // A far jump must *not* spend background workers on the old page.
+        // Once the destination is visible, its offscreen rows should then
+        // continue warming without any second scroll gesture.
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(1_000),
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                TileWidth = 120,
+                TileHeight = 120,
+                TileSpacing = 8,
+                PrefetchRows = 2,
+                PrefetchDelay = TimeSpan.FromMilliseconds(1),
+                DecodedBitmapEntryLimit = 512,
+                DecodedBitmapByteLimit = 512L * 1024 * 1024
+            });
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 900,
+            Height = 600,
+            Content = viewer
+        };
+        window.Show();
+        try
+        {
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && (viewer.Diagnostics.AttachedTiles == 0
+                     || viewer.Diagnostics.ReadyTiles
+                        < viewer.Diagnostics.AttachedTiles);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            const long targetIndex = 800;
+            viewer.ScrollToAsset(targetIndex);
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && (!viewer.IsAssetReady(targetIndex)
+                     || viewer.LastVisibleAssetIndex is null
+                     || viewer.LastVisibleAssetIndex < targetIndex);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IsAssetReady(targetIndex)
+                && viewer.LastVisibleAssetIndex >= targetIndex,
+                "Far seek did not present the requested visible target before background continuation.");
+
+            // Far-seek near-lookahead warms at most two rows. A third
+            // *offscreen* row becomes warm only if idle continuation
+            // resumes at this destination.
+            var targetRow = (viewer.LastVisibleAssetIndex ?? targetIndex)
+                / viewer.Columns + 3;
+            var offscreenIndex = targetRow * viewer.Columns;
+            Require(
+                offscreenIndex < viewer.AssetCount,
+                "Far-seek smoke needs a destination with a later offscreen row.");
+
+            for (var attempt = 0;
+                 attempt < 4_500
+                 && !viewer.IsAssetWarmForSmoke(offscreenIndex);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IsAssetWarmForSmoke(offscreenIndex),
+                "After a large jump, idle lookahead did not prepare a farther row from the NEW viewport.");
         }
         finally
         {
