@@ -2053,10 +2053,18 @@ internal static class Program
                 await Task.Delay(1);
             }
 
+            var targetTiming =
+                viewer.GetReadyTileTiming(targetIndex);
             Require(
                 viewer.IsAssetReady(targetIndex)
-                && provider.BackgroundRequests > initialBackground,
-                "Far-seek lookahead did not resume after its visible target became ready.");
+                && provider.BackgroundRequests > initialBackground
+                && targetTiming is { WarmBitmap: false }
+                && targetTiming.Value.Index == targetIndex
+                && targetTiming.Value.AttachToReadyMilliseconds >= 0
+                && targetTiming.Value.MetadataMilliseconds >= 0
+                && targetTiming.Value.ThumbnailSourceMilliseconds >= 0
+                && targetTiming.Value.BitmapAcquireMilliseconds >= 0,
+                "Far-seek target did not become ready with exact per-tile source/bitmap timing before background work resumed.");
         }
         finally
         {
