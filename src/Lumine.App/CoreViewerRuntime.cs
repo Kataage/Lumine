@@ -231,6 +231,22 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                     CoreViewerOpenStage.CreatingViewer,
                     $"Creating viewer for {assetCount:N0} assets…"));
 
+            // Pin the native library BEFORE creating any Viewer workers.
+            // A physical WER dump proved a first-viewport callback jumped
+            // into libvips after Windows had unloaded its code image (#367).
+            // Configuration is process-global and repeated calls are safe
+            // only with the same bounded policy.
+            VipsRuntimePolicy.EnsureConfigured(resourcePolicy);
+            if (!VipsRuntimePolicy.IsProcessLifetimePinned)
+            {
+                throw new InvalidOperationException(
+                    "Windows libvips process-lifetime module pin was not established.");
+            }
+
+            Program.Host?.Log.Write(
+                "image",
+                "libvips permanent Win32 module PIN verified before Viewer creation.");
+
             var thumbnailCache = new ThumbnailCache(
                 dataPaths.ThumbnailCachePath,
                 resourcePolicy);

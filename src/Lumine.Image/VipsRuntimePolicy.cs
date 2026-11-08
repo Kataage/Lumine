@@ -42,6 +42,21 @@ public static class VipsRuntimePolicy
         }
     }
 
+    // True only after Windows' loader has permanently pinned the actual
+    // native libvips module (GetModuleHandleExW PIN + FROM_ADDRESS).
+    // This is stronger than merely keeping a LoadLibrary reference count.
+    public static bool IsProcessLifetimePinned
+    {
+        get
+        {
+            lock (ConfigurationGate)
+            {
+                return OperatingSystem.IsWindows()
+                    && _processLifetimeHandle != 0;
+            }
+        }
+    }
+
     public static ulong DiscThresholdBytes
     {
         get
@@ -106,10 +121,9 @@ public static class VipsRuntimePolicy
 
             // libvips owns internal worker/background threads. Shut those down
             // explicitly after every Lumine image pipeline/object has been drained.
-            // Keep the extra Windows module reference pinned until process exit:
-            // NativeLibrary.Free is intentionally not called here. This prevents
-            // any late native callback/finalizer from jumping into an unmapped
-            // libvips image while the OS is still tearing the process down.
+            // The Windows loader's explicit permanent PIN (not a leaked
+            // LoadLibrary reference) keeps libvips mapped until process exit.
+            // Do not try to release it during managed/native teardown.
             global::NetVips.NetVips.Shutdown();
         }
     }
@@ -127,17 +141,64 @@ public static class VipsRuntimePolicy
                 AppContext.BaseDirectory,
                 "libvips-42.dll");
 
-        _processLifetimeHandle =
+        // The 2026-11-08 physical WER dump captured an *execute*
+        // access violation (ExceptionInformation[0] = 8) at an address
+        // inside libvips-42.dll's UNLOADED image. Keeping one ordinary
+        // NativeLibrary.Load reference was not sufficient in practice.
+        //
+        // The Windows loader's permanent pin is guaranteed to survive
+        // any subsequent FreeLibrary calls until the process terminates.
+        // Use the export's actual address instead of just a module name:
+        // this pins the exact DLL whose code NetVips will call.
+        var loadedHandle =
             File.Exists(localPath)
                 ? NativeLibrary.Load(localPath)
                 : NativeLibrary.Load("libvips-42.dll");
 
-        if (_processLifetimeHandle == 0)
+        try
         {
-            throw new DllNotFoundException(
-                "Unable to pin libvips-42.dll for the Lumine process lifetime.");
+            var exportAddress =
+                NativeLibrary.GetExport(
+                    loadedHandle,
+                    "vips_get_disc_threshold");
+
+            const uint getModuleHandleExPin = 0x00000001;
+            const uint getModuleHandleExFromAddress = 0x00000004;
+            var pinned = GetModuleHandleExW(
+                getModuleHandleExPin | getModuleHandleExFromAddress,
+                exportAddress,
+                out var pinnedHandle);
+            var win32Error = Marshal.GetLastPInvokeError();
+
+            if (!pinned
+                || pinnedHandle == 0
+                || pinnedHandle != loadedHandle)
+            {
+                throw new InvalidOperationException(
+                    "Could not permanently pin the exact libvips-42.dll "
+                    + $"image for process lifetime (Win32 error {win32Error}).");
+            }
+
+            _processLifetimeHandle = pinnedHandle;
+        }
+        finally
+        {
+            // Balance the initial load; GET_MODULE_HANDLE_EX_FLAG_PIN
+            // guarantees the image remains mapped even after this Free.
+            NativeLibrary.Free(loadedHandle);
         }
     }
+
+    [DllImport(
+        "kernel32.dll",
+        EntryPoint = "GetModuleHandleExW",
+        ExactSpelling = true,
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetModuleHandleExW(
+        uint flags,
+        nint addressInModule,
+        out nint moduleHandle);
 
     private static class VipsNative
     {
