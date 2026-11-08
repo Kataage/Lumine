@@ -1008,11 +1008,11 @@ internal static class CreativeArchiveDialogs
         account.SelectionChanged +=
             (_, _) => UpdateNewAccountVisibility();
         var accountSaving = false;
-        saveAccount.Click += async (_, _) =>
+        async Task<bool> RegisterCurrentAccountAsync()
         {
             if (accountSaving || registerAccount is null)
             {
-                return;
+                return false;
             }
 
             var name = customAccount.Text?.Trim() ?? string.Empty;
@@ -1020,7 +1020,7 @@ internal static class CreativeArchiveDialogs
             {
                 accountRegistrationStatus.Text =
                     "アカウント名または公開IDを入力してください。";
-                return;
+                return false;
             }
 
             accountSaving = true;
@@ -1038,14 +1038,14 @@ internal static class CreativeArchiveDialogs
                     {
                         accountRegistrationStatus.Text =
                             "公開先名を入力してください。";
-                        return;
+                        return false;
                     }
 
                     if (registerDestination is null)
                     {
                         accountRegistrationStatus.Text =
                             "公開先を登録できません。";
-                        return;
+                        return false;
                     }
 
                     var kind =
@@ -1077,7 +1077,7 @@ internal static class CreativeArchiveDialogs
                     {
                         accountRegistrationStatus.Text =
                             "公開先を保存できませんでした。";
-                        return;
+                        return false;
                     }
 
                     destinationProfiles.Add(profile);
@@ -1101,7 +1101,7 @@ internal static class CreativeArchiveDialogs
                 {
                     accountRegistrationStatus.Text =
                         "アカウントを保存できませんでした。";
-                    return;
+                    return false;
                 }
 
                 registeredAccounts.Add(saved);
@@ -1114,6 +1114,7 @@ internal static class CreativeArchiveDialogs
                 UpdateNewAccountVisibility();
                 accountRegistrationStatus.Text =
                     "アカウントを保存しました。";
+                return true;
             }
             catch (Exception exception)
             {
@@ -1121,13 +1122,17 @@ internal static class CreativeArchiveDialogs
                     exception.ToString());
                 accountRegistrationStatus.Text =
                     "アカウントを保存できませんでした。";
+                return false;
             }
             finally
             {
                 accountSaving = false;
                 saveAccount.IsEnabled = true;
             }
-        };
+        }
+        saveAccount.Click +=
+            async (_, _) =>
+                await RegisterCurrentAccountAsync();
         RenderDestination();
 
         var dialog = CreateDialog(
@@ -1360,7 +1365,20 @@ internal static class CreativeArchiveDialogs
                         platformMetadata,
                         orderEditor.OrderedAssetIds);
                 },
-                "公開記録を保存"));
+                "公開記録を保存",
+                beforeSaveAsync: async () =>
+                {
+                    if (registerAccount is null
+                        || !newAccountField.IsVisible
+                        || string.IsNullOrWhiteSpace(
+                            customAccount.Text))
+                    {
+                        return true;
+                    }
+
+                    return await RegisterCurrentAccountAsync();
+                },
+                saveStatus: status));
         dialog.Content = CreateDialogForm(stack);
         return dialog;
     }
@@ -1653,7 +1671,9 @@ internal static class CreativeArchiveDialogs
     private static StackPanel CreateButtons<T>(
         Window dialog,
         Func<T?> create,
-        string saveLabel = "保存")
+        string saveLabel = "保存",
+        Func<Task<bool>>? beforeSaveAsync = null,
+        TextBlock? saveStatus = null)
         where T : class
     {
         var cancel =
@@ -1673,10 +1693,65 @@ internal static class CreativeArchiveDialogs
                     Content = saveLabel
                 });
         save.Click +=
-            (_, _) =>
+            async (_, _) =>
             {
+                if (!save.IsEnabled)
+                {
+                    return;
+                }
+
                 var result = create();
-                if (result is not null)
+                if (result is null)
+                {
+                    return;
+                }
+
+                // Only Publication supplies a persistence hook. It keeps
+                // the dialog open if account registration fails instead
+                // of silently losing a reusable account identity.
+                if (beforeSaveAsync is not null)
+                {
+                    save.IsEnabled = false;
+                    cancel.IsEnabled = false;
+                    try
+                    {
+                        if (!await beforeSaveAsync())
+                        {
+                            if (saveStatus is not null)
+                            {
+                                saveStatus.Text =
+                                    "アカウントを登録できませんでした。";
+                            }
+
+                            return;
+                        }
+
+                        result = create();
+                        if (result is null)
+                        {
+                            return;
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        System.Diagnostics.Trace.TraceError(
+                            exception.ToString());
+                        if (saveStatus is not null)
+                        {
+                            saveStatus.Text =
+                                "公開記録を保存できませんでした。";
+                        }
+
+                        return;
+                    }
+                    finally
+                    {
+                        save.IsEnabled = true;
+                        cancel.IsEnabled = true;
+                    }
+                }
+
+                if (dialog.IsVisible)
                 {
                     dialog.Close(result);
                 }
