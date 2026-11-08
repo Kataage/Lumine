@@ -3617,7 +3617,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 MarkReady();
                 ReadyTimingForDiagnostics = new ViewerReadyTileTiming(
                     _index,
-                    WarmBitmap: true,
+                    true,
                     Stopwatch.GetElapsedTime(_loadStartedAt).TotalMilliseconds,
                     0,
                     0,
@@ -3965,7 +3965,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         MarkReady();
                         ReadyTimingForDiagnostics = new ViewerReadyTileTiming(
                             _index,
-                            WarmBitmap: false,
+                            false,
                             Stopwatch.GetElapsedTime(_loadStartedAt)
                                 .TotalMilliseconds,
                             Stopwatch.GetElapsedTime(
