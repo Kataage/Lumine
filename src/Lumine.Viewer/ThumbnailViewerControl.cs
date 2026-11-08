@@ -2133,6 +2133,12 @@ public sealed class ThumbnailViewerControl : UserControl
             ref _lookaheadLastScheduledDirection,
             _lookaheadDirection);
         _lookaheadCancellation = new CancellationTokenSource();
+        // A speculative offscreen request must not monopolize all native
+        // thumbnail workers indefinitely after scrolling stops (#788).
+        // Cancel only this lookahead's waiters after a bounded 5s; visible
+        // foreground requests own independent tokens and remain unaffected.
+        // This is shorter than the unchanged 10s idle acceptance gate.
+        _lookaheadCancellation.CancelAfter(TimeSpan.FromSeconds(5));
         _lookaheadScheduledAt = Stopwatch.GetTimestamp();
         _lookaheadScheduledDelay = delay;
         _lookaheadTask = PrefetchViewportLookaheadAsync(
