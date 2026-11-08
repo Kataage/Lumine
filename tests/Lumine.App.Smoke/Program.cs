@@ -9711,6 +9711,18 @@ try
                                     AutomationProperties.GetName(
                                         combo) ==
                                         "登録済みアカウントを選択");
+                        var destinationChoices =
+                            publicationRegistration
+                                .GetVisualDescendants()
+                                .OfType<ComboBox>()
+                                .Single(combo =>
+                                    AutomationProperties.GetName(
+                                        combo) == "公開先を選択");
+                        Require(
+                            destinationChoices.SelectedItem as string
+                                == "新しい公開先を入力",
+                            "New Publication destination must not misleadingly claim that account registration never persists it.");
+
 
                         Require(
                             newDestination.IsEffectivelyVisible
