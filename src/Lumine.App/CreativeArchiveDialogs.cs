@@ -764,6 +764,32 @@ internal static class CreativeArchiveDialogs
         Func<string, string, Task<PublicationDestinationInfo?>>?
             registerDestination = null,
         Func<long, string, string, Task<PublicationAccountInfo?>>?
+            registerAccount = null) =>
+        ShowWithFocusReturnAsync<CreativePublicationDialogResult>(
+            owner,
+            CreatePublicationDialogForSmoke(
+                owner,
+                selection,
+                publicationAssets,
+                works,
+                destinations,
+                accounts,
+                registerDestination,
+                registerAccount));
+
+    // Production dialog construction is also mounted by the App smoke.
+    // The test invokes actual Save-account button and then reopens the same
+    // production form with persisted repository records.
+    internal static Window CreatePublicationDialogForSmoke(
+        Window owner,
+        CreativeSelectionPreview selection,
+        IReadOnlyList<CreativePublicationAssetOption> publicationAssets,
+        IReadOnlyList<WorkInfo> works,
+        IReadOnlyList<PublicationDestinationInfo>? destinations = null,
+        IReadOnlyList<PublicationAccountInfo>? accounts = null,
+        Func<string, string, Task<PublicationDestinationInfo?>>?
+            registerDestination = null,
+        Func<long, string, string, Task<PublicationAccountInfo?>>?
             registerAccount = null)
     {
         ArgumentNullException.ThrowIfNull(publicationAssets);
@@ -1287,7 +1313,7 @@ internal static class CreativeArchiveDialogs
                         orderEditor.OrderedAssetIds);
                 }));
         dialog.Content = CreateDialogForm(stack);
-        return ShowWithFocusReturnAsync<CreativePublicationDialogResult>(owner, dialog);
+        return dialog;
     }
 
     // All creative-archive modal entry points use the same focus-return
