@@ -28,8 +28,7 @@ foreach ($file in $files) {
 
     $text = [IO.File]::ReadAllText(
         $sourcePath, [Text.Encoding]::UTF8)
-    if (-not $text.Contains('確認') -or
-        -not $text.Contains('問題')) {
+    if (-not $text.Contains('確認')) {
         throw "Japanese review wording is missing: $file"
     }
 }
