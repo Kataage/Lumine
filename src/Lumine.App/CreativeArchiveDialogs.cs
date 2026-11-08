@@ -1700,71 +1700,88 @@ internal static class CreativeArchiveDialogs
                 {
                     Content = saveLabel
                 });
-        save.Click +=
-            async (_, _) =>
-            {
-                if (!save.IsEnabled)
+        if (beforeSaveAsync is null)
+        {
+            // Preserve the original synchronous behavior of unrelated
+            // Work, Group and Relation dialogs.
+            save.Click +=
+                (_, _) =>
                 {
-                    return;
-                }
-
-                var result = create();
-                if (result is null)
-                {
-                    return;
-                }
-
-                // Only Publication supplies a persistence hook. It keeps
-                // the dialog open if account registration fails instead
-                // of silently losing a reusable account identity.
-                if (beforeSaveAsync is not null)
-                {
-                    save.IsEnabled = false;
-                    cancel.IsEnabled = false;
-                    try
+                    var result = create();
+                    if (result is not null)
                     {
-                        if (!await beforeSaveAsync())
+                        dialog.Close(result);
+                    }
+                };
+        }
+        else
+        {
+            save.Click +=
+                async (_, _) =>
+                {
+                    if (!save.IsEnabled)
+                    {
+                        return;
+                    }
+
+                    var result = create();
+                    if (result is null)
+                    {
+                        return;
+                    }
+
+                    // Only Publication supplies a persistence hook. It keeps
+                    // the dialog open if account registration fails instead
+                    // of silently losing a reusable account identity.
+                    if (beforeSaveAsync is not null)
+                    {
+                        save.IsEnabled = false;
+                        cancel.IsEnabled = false;
+                        try
                         {
+                            if (!await beforeSaveAsync())
+                            {
+                                if (saveStatus is not null)
+                                {
+                                    saveStatus.Text =
+                                        "アカウントを登録できませんでした。";
+                                }
+
+                                return;
+                            }
+
+                            result = create();
+                            if (result is null)
+                            {
+                                return;
+                            }
+                        }
+                        catch (Exception exception)
+                        {
+                            System.Diagnostics.Trace.TraceError(
+                                exception.ToString());
                             if (saveStatus is not null)
                             {
                                 saveStatus.Text =
-                                    "アカウントを登録できませんでした。";
+                                    "公開記録を保存できませんでした。";
                             }
 
                             return;
                         }
-
-                        result = create();
-                        if (result is null)
+                        finally
                         {
-                            return;
+                            save.IsEnabled = true;
+                            cancel.IsEnabled = true;
                         }
                     }
-                    catch (Exception exception)
+
+                    if (dialog.IsVisible)
                     {
-                        System.Diagnostics.Trace.TraceError(
-                            exception.ToString());
-                        if (saveStatus is not null)
-                        {
-                            saveStatus.Text =
-                                "公開記録を保存できませんでした。";
-                        }
-
-                        return;
+                        dialog.Close(result);
                     }
-                    finally
-                    {
-                        save.IsEnabled = true;
-                        cancel.IsEnabled = true;
-                    }
-                }
+                };
 
-                if (dialog.IsVisible)
-                {
-                    dialog.Close(result);
-                }
-            };
-
+        }
         var row =
             new StackPanel
             {
