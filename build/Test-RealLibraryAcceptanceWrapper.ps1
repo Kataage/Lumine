@@ -116,6 +116,13 @@ foreach ($iteration in 1..$Repeat) {
         throw
     }
 
+    # AppDataPaths.FromRoot writes runtime.log under data/logs, not
+    # directly under data. The crash wrapper must inspect the same file.
+    $runtimeLogPath = Join-Path (Join-Path (Join-Path $output "data") "logs") "runtime.log"
+    if (-not (Test-Path -LiteralPath $runtimeLogPath -PathType Leaf)) {
+        throw "Acceptance wrapper smoke iteration $iteration did not retain AppDataPaths runtime.log in data/logs."
+    }
+
     $summary =
         Get-Content -LiteralPath (Join-Path $output "summary.json") -Raw |
             ConvertFrom-Json
