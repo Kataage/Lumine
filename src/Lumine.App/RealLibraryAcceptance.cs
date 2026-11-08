@@ -759,9 +759,22 @@ internal sealed class RealLibraryAcceptanceSession
               + $"source_ms={tile.ThumbnailSourceMilliseconds:F1},"
               + $"bitmap_ms={tile.BitmapAcquireMilliseconds:F1}"
             : "tile_phases=unavailable";
+        // #634: the prior "source_ms" bundled queue admission, worker
+        // starvation, source identity probing and native image evaluation.
+        // Report the completed target tile's actual source sub-phases;
+        // a cache hit or fixture provider may have no phase trace.
+        var sourcePhases = phases is { } ready
+            && ready.SourceTimings is { } work
+                ? $",admission_ms={work.QueueAdmissionMilliseconds:F1}"
+                  + $",worker_queue_ms={work.WorkerQueueMilliseconds:F1}"
+                  + $",source_metadata_ms={work.SourceMetadataMilliseconds:F1}"
+                  + $",key_wait_ms={work.SourceKeyWaitMilliseconds:F1}"
+                  + $",native_setup_ms={work.NativeSetupMilliseconds:F1}"
+                  + $",render_encode_ms={work.RenderEncodeMilliseconds:F1}"
+                : ",source_phase=unavailable";
         Program.Host?.Log.Write(
             "scroll-diagnostics",
-            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}");
+            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}{sourcePhases}");
 
         var failuresAfter =
             grid.Diagnostics.TileLoadFailures;
