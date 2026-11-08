@@ -98,13 +98,24 @@ public sealed record ViewerSourceTechnicalMetadata(
         checked((long)Width * Height * 4L);
 }
 
+// Privacy-safe phase timing propagated to acceptance for one visible tile.
+// Nullable for cache hits and non-Image thumbnail providers.
+public readonly record struct ViewerThumbnailSourceTimings(
+    double QueueAdmissionMilliseconds,
+    double WorkerQueueMilliseconds,
+    double SourceMetadataMilliseconds,
+    double SourceKeyWaitMilliseconds,
+    double NativeSetupMilliseconds,
+    double RenderEncodeMilliseconds);
+
 public sealed record ViewerThumbnail(
     string CacheKey,
     string CachePath,
     int Width,
     int Height,
     ViewerSourceTechnicalMetadata? SourceMetadata = null,
-    byte[]? EncodedBytes = null);
+    byte[]? EncodedBytes = null,
+    ViewerThumbnailSourceTimings? SourceTimings = null);
 
 public interface IViewerPageSource
 {

@@ -759,9 +759,32 @@ internal sealed class RealLibraryAcceptanceSession
               + $"source_ms={tile.ThumbnailSourceMilliseconds:F1},"
               + $"bitmap_ms={tile.BitmapAcquireMilliseconds:F1}"
             : "tile_phases=unavailable";
+        // #634: the prior "source_ms" bundled queue admission, worker
+        // starvation, source identity probing and native image evaluation.
+        // Report the completed target tile's actual source sub-phases;
+        // a cache hit or fixture provider may have no phase trace.
+        var sourcePhases = phases is { } ready
+            && ready.SourceTimings is { } work
+                ? $",admission_ms={work.QueueAdmissionMilliseconds:F1}"
+                  + $",worker_queue_ms={work.WorkerQueueMilliseconds:F1}"
+                  + $",source_metadata_ms={work.SourceMetadataMilliseconds:F1}"
+                  + $",key_wait_ms={work.SourceKeyWaitMilliseconds:F1}"
+                  + $",native_setup_ms={work.NativeSetupMilliseconds:F1}"
+                  + $",render_encode_ms={work.RenderEncodeMilliseconds:F1}"
+                : ",source_phase=unavailable";
+        // Associate costly native evaluation with the original image
+        // type and size, without emitting any private path or file name.
+        // Whitelist the format before writing it to prevent log injection
+        // from untrusted source metadata.
+        var sourceShape = phases is { } sourceTile
+            && sourceTile.SourceFileBytes > 0
+                ? $",source_format={SafeDiagnosticFormat(sourceTile.SourceFormat)}"
+                  + $",source_megapixels={sourceTile.SourceRawPixels / 1_000_000.0:F1}"
+                  + $",source_mib={sourceTile.SourceFileBytes / 1_048_576.0:F2}"
+                : ",source_shape=unavailable";
         Program.Host?.Log.Write(
             "scroll-diagnostics",
-            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}");
+            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}{sourcePhases}{sourceShape}");
 
         var failuresAfter =
             grid.Diagnostics.TileLoadFailures;
@@ -772,6 +795,20 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Visible tile failures increased while scrolling to {target:N0}.");
         }
     }
+
+    private static string SafeDiagnosticFormat(string? format) =>
+        format?.Trim().ToLowerInvariant() switch
+        {
+            "jpeg" or "jpg" => "jpeg",
+            "png" => "png",
+            "webp" => "webp",
+            "gif" => "gif",
+            "bmp" => "bmp",
+            "tiff" or "tif" => "tiff",
+            "heif" or "heic" => "heif",
+            "avif" => "avif",
+            _ => "other"
+        };
 
     private async Task MeasureDetailAsync(
         Lumine.Viewer.DetailViewerControl detail,

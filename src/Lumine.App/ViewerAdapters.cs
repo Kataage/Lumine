@@ -389,7 +389,16 @@ internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
             ViewerImageMetadataBridge.ToViewerMetadata(
                 result.SourceMetadata,
                 effectiveAsset.SourceRevision),
-            result.EncodedBytes);
+            result.EncodedBytes,
+            result.WorkTimings is { } timings
+                ? new ViewerThumbnailSourceTimings(
+                    timings.QueueAdmissionMilliseconds,
+                    timings.WorkerQueueMilliseconds,
+                    timings.SourceMetadataMilliseconds,
+                    timings.SourceKeyWaitMilliseconds,
+                    timings.NativeSetupMilliseconds,
+                    timings.RenderEncodeMilliseconds)
+                : null);
     }
 }
 

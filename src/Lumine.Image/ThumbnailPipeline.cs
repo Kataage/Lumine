@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Lumine.Image;
 
 // Sampled on demand to distinguish queued thumbnail work from active generation.
@@ -152,6 +154,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 ? _interactiveQueueSlots
                 : _queueSlots;
 
+        var admissionStarted = Stopwatch.GetTimestamp();
         try
         {
             await admissionSlots
@@ -165,6 +168,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             throw new ObjectDisposedException(nameof(ThumbnailPipeline));
         }
 
+        var admissionMilliseconds =
+            Stopwatch.GetElapsedTime(admissionStarted).TotalMilliseconds;
         var completion = new TaskCompletionSource<ThumbnailResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var item =
@@ -173,7 +178,9 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 profile,
                 priority,
                 completion,
-                cancellationToken);
+                cancellationToken,
+                admissionMilliseconds,
+                Stopwatch.GetTimestamp());
 
         lock (_queueGate)
         {
@@ -345,6 +352,9 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             ReleaseAdmissionSlot(
                 item.Priority);
 
+            var workerQueueMilliseconds =
+                Stopwatch.GetElapsedTime(
+                    item.QueuedAtTimestamp).TotalMilliseconds;
             ThumbnailResult? result = null;
 
             try
@@ -361,10 +371,28 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                         item.CancellationToken,
                         _shutdown.Token);
 
+                var phaseProbe = new ThumbnailGenerationPhaseProbe();
                 result = _generator.GetOrCreate(
                     item.Source,
                     item.Profile,
-                    activeCancellation.Token);
+                    activeCancellation.Token,
+                    phaseProbe);
+                // A second request may find the same cache key after a
+                // worker starts. Never attribute fictitious native decode
+                // costs to that cache hit.
+                if (!result.CacheHit)
+                {
+                    result = result with
+                    {
+                        WorkTimings = new ThumbnailWorkTimings(
+                            item.QueueAdmissionMilliseconds,
+                            workerQueueMilliseconds,
+                            phaseProbe.SourceMetadataMilliseconds,
+                            phaseProbe.SourceKeyWaitMilliseconds,
+                            phaseProbe.NativeSetupMilliseconds,
+                            phaseProbe.RenderEncodeMilliseconds)
+                    };
+                }
 
                 item.Completion.TrySetResult(result);
             }
@@ -466,5 +494,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         ThumbnailProfile Profile,
         ThumbnailPriority Priority,
         TaskCompletionSource<ThumbnailResult> Completion,
-        CancellationToken CancellationToken);
+        CancellationToken CancellationToken,
+        double QueueAdmissionMilliseconds,
+        long QueuedAtTimestamp);
 }
