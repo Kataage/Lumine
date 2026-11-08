@@ -36,6 +36,8 @@ internal static class Program
             VerifyResourcePolicyMapping();
             await VerifyCursorPagingAsync();
             await VerifyBackgroundForegroundCoalescingAsync(thumbnailPath);
+            await VerifyColdForegroundWorkerReservationAsync(thumbnailPath);
+            await VerifyPendingBackgroundForegroundPromotionAsync(thumbnailPath);
             await VerifyInteractivePromotionAsync(thumbnailPath);
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
             await VerifyViewerSessionShutdownAsync(thumbnailPath);
@@ -751,6 +753,153 @@ internal static class Program
         Require(
             thumbnailProvider.Active == 0,
             "Background-to-foreground coalesced request did not drain.");
+    }
+
+    private static async Task VerifyColdForegroundWorkerReservationAsync(
+        string thumbnailPath)
+    {
+        // #634 owner's 4,044-image Cold capture: a far Interactive tile
+        // waited up to 2,071ms while source work used 4 native workers.
+        // Simulate slow non-preemptible background reads. Background
+        // admission may occupy only half the pool, leaving foreground
+        // and Interactive work able to start without releasing prefetch.
+        var policy = CoreResourcePolicy.Resolve(processorCount: 16);
+        var options = ViewerOptions.FromResourcePolicy(policy);
+        Require(
+            policy.ThumbnailWorkerCount == 4
+            && options.BackgroundSourceRequestLimit == 2,
+            "Default Viewer background admission must reserve half of the four thumbnail workers.");
+
+        var provider = new BackgroundCapacityThumbnailProvider(thumbnailPath);
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(100),
+            provider,
+            options);
+
+        using var abandon = new CancellationTokenSource();
+        var backgroundTasks = new List<Task<ViewerThumbnail>>();
+        for (var index = 0; index < 6; index++)
+        {
+            var asset = await session.GetAssetAsync(index);
+            backgroundTasks.Add(session.GetThumbnailAsync(
+                asset, ViewerThumbnailPriority.Background,
+                abandon.Token).AsTask());
+        }
+
+        await provider.TwoBackgroundStarted.WaitAsync(
+            TimeSpan.FromSeconds(2));
+        await Task.Delay(50);
+        Require(
+            provider.ActiveBackground == 2
+            && provider.MaxBackground == 2
+            && provider.BackgroundStarted == 2,
+            "Cold speculative prefetch occupied all worker slots rather than reserving foreground capacity.");
+
+        var target = await session.GetAssetAsync(50);
+        var interactive = session.GetThumbnailAsync(
+            target, ViewerThumbnailPriority.Interactive).AsTask();
+        await provider.InteractiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        Require(
+            (await interactive).CacheKey == $"capacity-{target.Id}"
+            && provider.ActiveBackground == 2,
+            "Cold far-seek Interactive thumbnail waited for non-preemptible background generation.");
+
+        // An abandoned viewport must cancel both active providers and
+        // requests still waiting on background admission.
+        abandon.Cancel();
+        foreach (var task in backgroundTasks)
+        {
+            try
+            {
+                _ = await task.WaitAsync(TimeSpan.FromSeconds(2));
+                throw new InvalidOperationException(
+                    "Cancelled cold lookahead returned a finished thumbnail.");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        Require(
+            provider.ActiveBackground == 0
+            && provider.MaxBackground == 2
+            && provider.BackgroundStarted == 2,
+            "Cold lookahead cancellation left native source slots occupied or admitted obsolete requests.");
+
+        provider.Release();
+        var nextAsset = await session.GetAssetAsync(60);
+        var next = await session.GetThumbnailAsync(
+            nextAsset, ViewerThumbnailPriority.Background);
+        Require(next.CacheKey == $"capacity-{nextAsset.Id}",
+            "Background source admission was not available after cancellation.");
+    }
+
+    private static async Task VerifyPendingBackgroundForegroundPromotionAsync(
+        string thumbnailPath)
+    {
+        // A pending speculative request must not trap a newly visible tile
+        // behind the background source semaphore.
+        var provider = new BackgroundCapacityThumbnailProvider(thumbnailPath);
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(100),
+            provider,
+            new ViewerOptions
+            {
+                BackgroundSourceRequestLimit = 2,
+                PrefetchRows = 0
+            });
+
+        using var abandon = new CancellationTokenSource();
+        var firstAsset = await session.GetAssetAsync(1);
+        var secondAsset = await session.GetAssetAsync(2);
+        var upcomingAsset = await session.GetAssetAsync(3);
+        var first = session.GetThumbnailAsync(
+            firstAsset, ViewerThumbnailPriority.Background,
+            abandon.Token).AsTask();
+        var second = session.GetThumbnailAsync(
+            secondAsset, ViewerThumbnailPriority.Background,
+            abandon.Token).AsTask();
+
+        await provider.TwoBackgroundStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        var background = session.GetThumbnailAsync(
+            upcomingAsset, ViewerThumbnailPriority.Background,
+            abandon.Token).AsTask();
+        Require(
+            provider.BackgroundStarted == 2 && !background.IsCompleted,
+            "Admission-pressure test did not actually queue the next Background tile.");
+
+        var foreground = session.GetThumbnailAsync(
+            upcomingAsset, ViewerThumbnailPriority.Foreground).AsTask();
+        await provider.ForegroundStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        var results = await Task.WhenAll(
+            background.WaitAsync(TimeSpan.FromSeconds(2)),
+            foreground.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        Require(
+            results[0].CacheKey == results[1].CacheKey
+            && provider.ForegroundRequests == 1
+            && provider.BackgroundStarted == 2
+            && session.Diagnostics.ThumbnailRequests == 3
+            && session.Diagnostics.ThumbnailRequestsCoalesced >= 1,
+            "A visible tile inherited a blocked Background slot or generated duplicate source work.");
+
+        abandon.Cancel();
+        foreach (var task in new[] { first, second })
+        {
+            try
+            {
+                _ = await task.WaitAsync(TimeSpan.FromSeconds(2));
+                throw new InvalidOperationException(
+                    "Obsolete active Background tile completed after cancellation.");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        Require(
+            provider.ActiveBackground == 0,
+            "Foreground promotion left stale source slots occupied.");
     }
 
     private static async Task VerifyInteractivePromotionAsync(
@@ -4876,6 +5025,81 @@ internal sealed class ControlledFailureThumbnailProvider(
                 path,
                 1,
                 1));
+    }
+}
+
+internal sealed class BackgroundCapacityThumbnailProvider(
+    string path) : IViewerThumbnailProvider
+{
+    private readonly TaskCompletionSource _secondBackground =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _interactiveStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _foregroundStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _backgroundStarted;
+    private int _foregroundRequests;
+    private int _activeBackground;
+    private int _maxBackground;
+
+    public int BackgroundStarted => Volatile.Read(ref _backgroundStarted);
+    public int ForegroundRequests => Volatile.Read(ref _foregroundRequests);
+    public int ActiveBackground => Volatile.Read(ref _activeBackground);
+    public int MaxBackground => Volatile.Read(ref _maxBackground);
+    public Task TwoBackgroundStarted => _secondBackground.Task;
+    public Task InteractiveStarted => _interactiveStarted.Task;
+    public Task ForegroundStarted => _foregroundStarted.Task;
+    public void Release() => _release.TrySetResult();
+
+    public async ValueTask<ViewerThumbnail> RequestAsync(
+        ViewerAsset asset,
+        ViewerThumbnailPriority priority,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (priority == ViewerThumbnailPriority.Background)
+        {
+            var active = Interlocked.Increment(ref _activeBackground);
+            Interlocked.Increment(ref _backgroundStarted);
+            while (true)
+            {
+                var peak = Volatile.Read(ref _maxBackground);
+                if (peak >= active
+                    || Interlocked.CompareExchange(
+                        ref _maxBackground, active, peak) == peak)
+                {
+                    break;
+                }
+            }
+
+            if (active == 2)
+            {
+                _secondBackground.TrySetResult();
+            }
+
+            try
+            {
+                await _release.Task.WaitAsync(cancellationToken);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeBackground);
+            }
+        }
+        else if (priority == ViewerThumbnailPriority.Interactive)
+        {
+            _interactiveStarted.TrySetResult();
+        }
+        else if (priority == ViewerThumbnailPriority.Foreground)
+        {
+            Interlocked.Increment(ref _foregroundRequests);
+            _foregroundStarted.TrySetResult();
+        }
+
+        return new ViewerThumbnail(
+            $"capacity-{asset.Id}", path, 1, 1);
     }
 }
 

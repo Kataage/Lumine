@@ -28,6 +28,7 @@ public sealed class ViewerSession : IAsyncDisposable
     private readonly Dictionary<long, InFlightRequest> _inFlight = [];
     private readonly HashSet<InFlightRequest> _activeRequests = [];
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly SemaphoreSlim _backgroundSourceSlots;
     private TaskCompletionSource _operationsDrained =
         NewCompletedSignal();
     private readonly TaskCompletionSource _disposeCompletion =
@@ -72,9 +73,15 @@ public sealed class ViewerSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(Options.TileHeight, 0);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.TileSpacing);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.PrefetchRows);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            Options.BackgroundSourceRequestLimit);
         ArgumentOutOfRangeException.ThrowIfLessThan(Options.PrefetchDelay, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
             Options.DecodedThumbnailMaxDimension);
+
+        _backgroundSourceSlots = new SemaphoreSlim(
+            Options.BackgroundSourceRequestLimit,
+            Options.BackgroundSourceRequestLimit);
 
         BitmapCache = bitmapCache
             ?? new DecodedBitmapCache(
@@ -268,10 +275,17 @@ public sealed class ViewerSession : IAsyncDisposable
                         cancellationToken);
                 }
 
-                // Reuse work already in flight for ordinary
-                // Background -> Foreground transitions. Cancelling and
-                // restarting the same source decode discards useful native
-                // work and increases cold-scroll latency.
+                // Reuse a source that has already entered the native
+                // pipeline. If it is STILL waiting for a speculative
+                // admission slot, promote that same request to Foreground
+                // instead of letting the visible tile wait behind other
+                // Background requests. No duplicate source generation.
+                if (priority == ViewerThumbnailPriority.Foreground
+                    && existing.Priority == ViewerThumbnailPriority.Background)
+                {
+                    existing.PromotePendingBackground();
+                }
+
                 existing.Waiters++;
                 Interlocked.Increment(
                     ref _thumbnailRequestsCoalesced);
@@ -301,16 +315,23 @@ public sealed class ViewerSession : IAsyncDisposable
         var requestCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(
                 _shutdown.Token);
+        // Only Background work needs an upgrade signal. Foreground and
+        // Interactive never wait for a speculative admission slot.
+        var backgroundPromotion = priority == ViewerThumbnailPriority.Background
+            ? new CancellationTokenSource()
+            : null;
         var task =
             RequestCoreAsync(
                 asset,
                 priority,
-                requestCancellation.Token);
+                requestCancellation.Token,
+                backgroundPromotion?.Token ?? CancellationToken.None);
         var request =
             new InFlightRequest(
                 requestCancellation,
                 task,
-                priority)
+                priority,
+                backgroundPromotion)
             {
                 Waiters = 1
             };
@@ -451,6 +472,7 @@ public sealed class ViewerSession : IAsyncDisposable
             await BitmapCache.DisposeAsync()
                 .ConfigureAwait(false);
 
+            _backgroundSourceSlots.Dispose();
             _shutdown.Dispose();
             _disposeCompletion.TrySetResult();
         }
@@ -563,10 +585,42 @@ public sealed class ViewerSession : IAsyncDisposable
     private async Task<ViewerThumbnail> RequestCoreAsync(
         ViewerAsset asset,
         ViewerThumbnailPriority priority,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        CancellationToken backgroundPromotionToken)
     {
+        var ownsBackgroundSlot = false;
         try
         {
+            if (priority == ViewerThumbnailPriority.Background)
+            {
+                // The Image worker pool gives queued Interactive/Fg
+                // requests priority, but cannot preempt up to four
+                // already-running native background thumbnail decodes.
+                // Limit speculative source work at the Viewer boundary
+                // so foreground requests can enter idle worker capacity
+                // even when the Cold library contains expensive images.
+                // Cancellation remains linked to the owning lookahead,
+                // and the released permit cannot strand a shutdown.
+                // Foreground promotion cancels ONLY the Background
+                // semaphore wait, never an already admitted native
+                // source request or the original shared request token.
+                using var slotWaitCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken, backgroundPromotionToken);
+                try
+                {
+                    await _backgroundSourceSlots.WaitAsync(
+                        slotWaitCancellation.Token).ConfigureAwait(false);
+                    ownsBackgroundSlot = true;
+                }
+                catch (OperationCanceledException)
+                    when (backgroundPromotionToken.IsCancellationRequested
+                        && !cancellationToken.IsCancellationRequested)
+                {
+                    priority = ViewerThumbnailPriority.Foreground;
+                }
+            }
+
             return await _thumbnails.RequestAsync(
                 asset,
                 priority,
@@ -580,6 +634,13 @@ public sealed class ViewerSession : IAsyncDisposable
         {
             Interlocked.Increment(ref _thumbnailRequestsFailed);
             throw;
+        }
+        finally
+        {
+            if (ownsBackgroundSlot)
+            {
+                _backgroundSourceSlots.Release();
+            }
         }
     }
 
@@ -653,7 +714,8 @@ public sealed class ViewerSession : IAsyncDisposable
     private sealed class InFlightRequest(
         CancellationTokenSource cancellation,
         Task<ViewerThumbnail> task,
-        ViewerThumbnailPriority priority)
+        ViewerThumbnailPriority priority,
+        CancellationTokenSource? backgroundPromotion)
     {
         private int _cancellationDisposed;
 
@@ -670,6 +732,25 @@ public sealed class ViewerSession : IAsyncDisposable
             System.Threading.Tasks.Task.CompletedTask;
 
         public int Waiters { get; set; }
+
+        public void PromotePendingBackground()
+        {
+            if (Volatile.Read(ref _cancellationDisposed) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                backgroundPromotion?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The already completed request may be cleaned up
+                // concurrently. The foreground waiter observes its
+                // completed result without a duplicate provider call.
+            }
+        }
 
         public void Cancel()
         {
@@ -699,6 +780,7 @@ public sealed class ViewerSession : IAsyncDisposable
             }
 
             cancellation.Dispose();
+            backgroundPromotion?.Dispose();
         }
     }
 }
