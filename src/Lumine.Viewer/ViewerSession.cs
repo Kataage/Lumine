@@ -28,6 +28,7 @@ public sealed class ViewerSession : IAsyncDisposable
     private readonly Dictionary<long, InFlightRequest> _inFlight = [];
     private readonly HashSet<InFlightRequest> _activeRequests = [];
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly SemaphoreSlim _backgroundSourceSlots;
     private TaskCompletionSource _operationsDrained =
         NewCompletedSignal();
     private readonly TaskCompletionSource _disposeCompletion =
@@ -72,9 +73,15 @@ public sealed class ViewerSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(Options.TileHeight, 0);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.TileSpacing);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.PrefetchRows);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            Options.BackgroundSourceRequestLimit);
         ArgumentOutOfRangeException.ThrowIfLessThan(Options.PrefetchDelay, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
             Options.DecodedThumbnailMaxDimension);
+
+        _backgroundSourceSlots = new SemaphoreSlim(
+            Options.BackgroundSourceRequestLimit,
+            Options.BackgroundSourceRequestLimit);
 
         BitmapCache = bitmapCache
             ?? new DecodedBitmapCache(
@@ -451,6 +458,7 @@ public sealed class ViewerSession : IAsyncDisposable
             await BitmapCache.DisposeAsync()
                 .ConfigureAwait(false);
 
+            _backgroundSourceSlots.Dispose();
             _shutdown.Dispose();
             _disposeCompletion.TrySetResult();
         }
@@ -565,8 +573,24 @@ public sealed class ViewerSession : IAsyncDisposable
         ViewerThumbnailPriority priority,
         CancellationToken cancellationToken)
     {
+        var ownsBackgroundSlot = false;
         try
         {
+            if (priority == ViewerThumbnailPriority.Background)
+            {
+                // The Image worker pool gives queued Interactive/Fg
+                // requests priority, but cannot preempt up to four
+                // already-running native background thumbnail decodes.
+                // Limit speculative source work at the Viewer boundary
+                // so foreground requests can enter idle worker capacity
+                // even when the Cold library contains expensive images.
+                // Cancellation remains linked to the owning lookahead,
+                // and the released permit cannot strand a shutdown.
+                await _backgroundSourceSlots.WaitAsync(
+                    cancellationToken).ConfigureAwait(false);
+                ownsBackgroundSlot = true;
+            }
+
             return await _thumbnails.RequestAsync(
                 asset,
                 priority,
@@ -580,6 +604,13 @@ public sealed class ViewerSession : IAsyncDisposable
         {
             Interlocked.Increment(ref _thumbnailRequestsFailed);
             throw;
+        }
+        finally
+        {
+            if (ownsBackgroundSlot)
+            {
+                _backgroundSourceSlots.Release();
+            }
         }
     }
 
