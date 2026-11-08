@@ -44,6 +44,17 @@ public readonly record struct ViewerTileReadinessDiagnostics(
     double MeanThumbnailSourceMilliseconds,
     double MeanBitmapAcquireMilliseconds);
 
+// Per-target timings use the exact realized tile, not aggregate values
+// across dozens of unrelated tiles during a cold far seek (#536).
+// Does not alter readiness or performance gate decisions.
+public readonly record struct ViewerReadyTileTiming(
+    long Index,
+    bool WarmBitmap,
+    double AttachToReadyMilliseconds,
+    double MetadataMilliseconds,
+    double ThumbnailSourceMilliseconds,
+    double BitmapAcquireMilliseconds);
+
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Design",
     "CA1001:Types that own disposable fields should be disposable",
@@ -553,6 +564,21 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         return details.Count == 0 ? "none" : string.Join(",", details);
+    }
+
+    public ViewerReadyTileTiming? GetReadyTileTiming(long index)
+    {
+        foreach (var tile in this.GetVisualDescendants()
+                     .OfType<ViewerTileControl>())
+        {
+            if (tile.Index == index
+                && tile.IsReady)
+            {
+                return tile.ReadyTimingForDiagnostics;
+            }
+        }
+
+        return null;
     }
 
     public bool IsAssetReady(long index)
@@ -2971,6 +2997,7 @@ public sealed class ThumbnailViewerControl : UserControl
         private bool _isReady;
         private bool _isLoading;
         private long _loadStartedAt;
+        public ViewerReadyTileTiming? ReadyTimingForDiagnostics { get; private set; }
         private bool _hovered;
         private bool _pressed;
 
@@ -3588,6 +3615,13 @@ public sealed class ThumbnailViewerControl : UserControl
                 ApplyPresentation(
                     warmAsset);
                 MarkReady();
+                ReadyTimingForDiagnostics = new ViewerReadyTileTiming(
+                    _index,
+                    WarmBitmap: true,
+                    Stopwatch.GetElapsedTime(_loadStartedAt).TotalMilliseconds,
+                    0,
+                    0,
+                    0);
                 _owner.RecordTileReady(
                     _loadStartedAt,
                     warm: true);
@@ -3616,6 +3650,7 @@ public sealed class ThumbnailViewerControl : UserControl
             _loadCancellation?.Cancel();
             _loadCancellation?.Dispose();
             _loadCancellation = null;
+            ReadyTimingForDiagnostics = null;
             _isLoading = false;
 
             if (_isReady)
@@ -3928,6 +3963,20 @@ public sealed class ThumbnailViewerControl : UserControl
                         ReplaceBitmapLease(next);
                         ApplyPresentation(asset);
                         MarkReady();
+                        ReadyTimingForDiagnostics = new ViewerReadyTileTiming(
+                            _index,
+                            WarmBitmap: false,
+                            Stopwatch.GetElapsedTime(_loadStartedAt)
+                                .TotalMilliseconds,
+                            Stopwatch.GetElapsedTime(
+                                _loadStartedAt,
+                                afterMetadata).TotalMilliseconds,
+                            Stopwatch.GetElapsedTime(
+                                afterMetadata,
+                                afterSource).TotalMilliseconds,
+                            Stopwatch.GetElapsedTime(
+                                afterSource,
+                                afterBitmap).TotalMilliseconds);
                         _owner.RecordTileReady(
                             _loadStartedAt,
                             warm: false,
