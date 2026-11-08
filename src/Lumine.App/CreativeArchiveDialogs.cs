@@ -893,7 +893,7 @@ internal static class CreativeArchiveDialogs
                 account);
         var newAccountField =
             CreatePublicationField(
-                "新しいアカウント名・ID（任意）",
+                "登録するアカウント名（任意）",
                 customAccount);
         var technicalMetadata =
             CreatePublicationField(
@@ -1019,7 +1019,7 @@ internal static class CreativeArchiveDialogs
             if (string.IsNullOrWhiteSpace(name))
             {
                 accountRegistrationStatus.Text =
-                    "アカウント名または公開IDを入力してください。";
+                    "登録するアカウント名を入力してください。";
                 return false;
             }
 
@@ -1624,6 +1624,12 @@ internal static class CreativeArchiveDialogs
     {
         var field = CreateLabeledControl(label, control);
         var title = field.Children.OfType<TextBlock>().Single();
+        if (string.IsNullOrWhiteSpace(
+            AutomationProperties.GetName(control)))
+        {
+            AutomationProperties.SetName(control, label);
+        }
+
         title.FontSize = LumineDesign.BodyFontSize;
         title.Foreground = LumineDesign.Foreground;
         return field;
