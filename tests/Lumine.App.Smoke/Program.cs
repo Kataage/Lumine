@@ -9734,8 +9734,8 @@ try
                             && accountChoices.SelectedIndex == 1
                             && accountChoices.SelectedItem as string
                                 == "smoke-account"
-                            && !newAccount.IsVisible
-                            && !register.IsVisible,
+                            && !newAccount.IsEffectivelyVisible
+                            && !register.IsEffectivelyVisible,
                             "Inline Publication account save did not persist and reselect a Pixiv profile.");
 
                         publicationRegistration.Close();
@@ -9765,6 +9765,84 @@ try
                                 == "smoke-account"
                             && reopenedAccount.SelectedIndex == 1,
                             "Reopened Publication did not select its persistently registered account by default.");
+                        // #799: core fields must be understandable from
+                        // their Japanese titles alone, without explanatory
+                        // small print or irrelevant new-entry labels.
+                        var visiblePublicationLabels =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Where(label => label.IsEffectivelyVisible)
+                                .Select(label => label.Text ?? string.Empty)
+                                .ToArray();
+                        var expectedPublicationLabels = new[]
+                        {
+                            "公開先サービス",
+                            "関連する作品（任意）",
+                            "投稿アカウント",
+                            "投稿タイトル",
+                            "投稿本文",
+                            "投稿タグ",
+                            "公開日時",
+                            "投稿ID（任意）",
+                            "投稿URL（任意）",
+                            "投稿画像の順番（上から順）"
+                        };
+                        Require(
+                            expectedPublicationLabels.All(
+                                visiblePublicationLabels.Contains)
+                            && !visiblePublicationLabels.Contains(
+                                "新しい公開先名")
+                            && !visiblePublicationLabels.Contains(
+                                "新しいアカウント名・ID")
+                            && !visiblePublicationLabels.Any(
+                                label => label.Contains(
+                                    "snapshot",
+                                    StringComparison.OrdinalIgnoreCase)
+                                    || label.Contains(
+                                        "caption",
+                                        StringComparison.OrdinalIgnoreCase)
+                                    || label.Contains(
+                                        "この記録だけの公開先",
+                                        StringComparison.Ordinal)),
+                            "Publication still shows ambiguous labels, hidden new-account fields, or long explanatory captions.");
+
+                        var technicalDetails =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<Expander>()
+                                .Single(expander =>
+                                    expander.Header as string
+                                        == "サイト固有情報（JSON・任意）");
+                        Require(
+                            !technicalDetails.IsVisible
+                            && !technicalDetails.IsExpanded,
+                            "Pixiv Publication exposed unnecessary custom JSON fields in the normal form.");
+
+                        registrationOwner.Width = 640;
+                        registrationOwner.Height = 480;
+                        Dispatcher.UIThread.RunJobs();
+                        var realPublicationLayout =
+                            reopenedPublication.Content as Grid
+                            ?? throw new InvalidOperationException(
+                                "Actual Publication modal lost the shared fixed-footer layout.");
+                        var realPublicationFooter =
+                            realPublicationLayout.Children
+                                .OfType<StackPanel>()
+                                .Single();
+                        Require(
+                            reopenedPublication.Height
+                                <= registrationOwner.Bounds.Height - 20
+                            && realPublicationFooter
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Where(button =>
+                                    button.Content as string
+                                        is "保存" or "キャンセル")
+                                .Count(button =>
+                                    button.IsEffectivelyVisible) == 2,
+                            "Publication label cleanup clipped the fixed Save/Cancel footer on a small owner window.");
+
                         reopenedPublication.Close();
                         registrationOwner.Close();
                         Dispatcher.UIThread.RunJobs();
