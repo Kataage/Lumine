@@ -1142,6 +1142,18 @@ try
         var result = await pipeline.RequestAsync(source, ThumbnailProfiles.GridSmall);
 
         Require(!result.CacheHit, $"First {Path.GetExtension(sourcePath)} request unexpectedly hit cache.");
+        // #634: native Cold failures must be separable from queue wait,
+        // source metadata probe, key gate and lazy libvips/WebP evaluation.
+        Require(result.WorkTimings is { } trace
+            && double.IsFinite(trace.QueueAdmissionMilliseconds)
+            && double.IsFinite(trace.WorkerQueueMilliseconds)
+            && trace.QueueAdmissionMilliseconds >= 0
+            && trace.WorkerQueueMilliseconds >= 0
+            && trace.SourceMetadataMilliseconds > 0
+            && trace.SourceKeyWaitMilliseconds >= 0
+            && trace.NativeSetupMilliseconds >= 0
+            && trace.RenderEncodeMilliseconds > 0,
+            "Image pipeline did not attribute the generated Cold thumbnail to all six numeric source phases.");
         Require(File.Exists(result.CachePath), "Generated thumbnail was not persisted.");
         Require(result.Width <= ThumbnailProfiles.GridSmall.MaxWidth, "Thumbnail width exceeded profile.");
         Require(result.Height <= ThumbnailProfiles.GridSmall.MaxHeight, "Thumbnail height exceeded profile.");
@@ -2162,8 +2174,9 @@ try
             && string.IsNullOrEmpty(
                 firstMemory.CachePath)
             && firstMemory.SourceMetadata
-                is not null,
-            "Memory-only first thumbnail did not return an encoded in-memory payload.");
+                is not null
+            && firstMemory.WorkTimings is { RenderEncodeMilliseconds: > 0 },
+            "Memory-only first thumbnail did not return an encoded in-memory payload with Cold phase timing.");
 
         var persistentAlphaBytes =
             await File.ReadAllBytesAsync(
@@ -2189,8 +2202,9 @@ try
             && secondMemory.EncodedBytes
                 is { Length: > 0 }
             && string.IsNullOrEmpty(
-                secondMemory.CachePath),
-            "Memory-only Interactive thumbnail did not reuse the bounded encoded-memory cache.");
+                secondMemory.CachePath)
+            && secondMemory.WorkTimings is null,
+            "Memory-only Interactive thumbnail did not reuse the bounded encoded-memory cache without fake source phases.");
         Require(
             memoryPipeline.Diagnostics.SourceOpens
                 == opensBeforeMemoryHit,
