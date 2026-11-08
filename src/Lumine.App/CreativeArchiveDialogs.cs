@@ -70,7 +70,7 @@ internal sealed class CreativePublicationPixivMetadataEditor
             new TextBlock
             {
                 Text =
-                    "Pixivの年齢制限",
+                    "Pixivの年齢制限（任意）",
                 Foreground =
                     LumineDesign.Foreground,
                 FontSize =
@@ -98,7 +98,7 @@ internal sealed class CreativePublicationPixivMetadataEditor
                 new CheckBox
                 {
                     Content =
-                        "AI生成作品として登録",
+                        "AI生成作品として登録（任意）",
                     IsChecked = true
                 });
         AutomationProperties.SetName(
@@ -791,7 +791,7 @@ internal static class CreativeArchiveDialogs
                             static item =>
                                 item.Name)
                         .Append(
-                            "一時入力（保存しない）")
+                            "新しい公開先を入力")
                         .ToArray(),
                 SelectedIndex = 0
             };
@@ -843,7 +843,7 @@ internal static class CreativeArchiveDialogs
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "このアカウントを保存",
+                    Content = "アカウントを登録して使用",
                     IsVisible = registerAccount is not null
                 });
         AutomationProperties.SetName(
@@ -863,7 +863,7 @@ internal static class CreativeArchiveDialogs
             Text =
                 DateTimeOffset.Now
                     .ToString(
-                        "yyyy-MM-dd HH:mm:ss zzz",
+                        "yyyy/MM/dd HH:mm",
                         CultureInfo.InvariantCulture)
         };
         var externalId = new TextBox
@@ -885,22 +885,24 @@ internal static class CreativeArchiveDialogs
 
         var newDestinationField =
             CreatePublicationField(
-                "新しい公開先名",
+                "新しい公開先名（必須）",
                 customDestination);
         var savedAccountField =
             CreatePublicationField(
-                "投稿アカウント",
+                "投稿アカウント（任意）",
                 account);
         var newAccountField =
             CreatePublicationField(
-                "新しいアカウント名・ID",
+                "登録するアカウント名（任意）",
                 customAccount);
-        var technicalMetadata = new Expander
-        {
-            Header = "サイト固有情報（JSON・任意）",
-            IsExpanded = false,
-            Content = customMetadata
-        };
+        var technicalMetadata =
+            CreatePublicationField(
+                "サイト固有情報（任意・JSON）",
+                customMetadata);
+        // Keep the registration action with its input, not as an
+        // unrelated primary-form action far from the field.
+        newAccountField.Children.Add(saveAccount);
+        newAccountField.Children.Add(accountRegistrationStatus);
 
         PublicationDestinationInfo? SelectedDestinationProfile() =>
             destination.SelectedIndex >= 0
@@ -944,7 +946,7 @@ internal static class CreativeArchiveDialogs
                                     ? item.DisplayName
                                     : $"{item.DisplayName} · {item.AccountIdentifier}"))
                     .Append(
-                        "別のアカウントを入力")
+                        "新しいアカウントを登録")
                     .ToArray();
             account.SelectedIndex =
                 selectedAccounts.Length > 0
@@ -1006,19 +1008,19 @@ internal static class CreativeArchiveDialogs
         account.SelectionChanged +=
             (_, _) => UpdateNewAccountVisibility();
         var accountSaving = false;
-        saveAccount.Click += async (_, _) =>
+        async Task<bool> RegisterCurrentAccountAsync()
         {
             if (accountSaving || registerAccount is null)
             {
-                return;
+                return false;
             }
 
             var name = customAccount.Text?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(name))
             {
                 accountRegistrationStatus.Text =
-                    "アカウント名または公開IDを入力してください。";
-                return;
+                    "登録するアカウント名を入力してください。";
+                return false;
             }
 
             accountSaving = true;
@@ -1036,14 +1038,14 @@ internal static class CreativeArchiveDialogs
                     {
                         accountRegistrationStatus.Text =
                             "公開先名を入力してください。";
-                        return;
+                        return false;
                     }
 
                     if (registerDestination is null)
                     {
                         accountRegistrationStatus.Text =
                             "公開先を登録できません。";
-                        return;
+                        return false;
                     }
 
                     var kind =
@@ -1075,14 +1077,14 @@ internal static class CreativeArchiveDialogs
                     {
                         accountRegistrationStatus.Text =
                             "公開先を保存できませんでした。";
-                        return;
+                        return false;
                     }
 
                     destinationProfiles.Add(profile);
                     destination.ItemsSource =
                         destinationProfiles
                             .Select(static item => item.Name)
-                            .Append("一時入力（保存しない）")
+                            .Append("新しい公開先を入力")
                             .ToArray();
                     destination.SelectedIndex =
                         destinationProfiles.Count - 1;
@@ -1099,7 +1101,7 @@ internal static class CreativeArchiveDialogs
                 {
                     accountRegistrationStatus.Text =
                         "アカウントを保存できませんでした。";
-                    return;
+                    return false;
                 }
 
                 registeredAccounts.Add(saved);
@@ -1112,6 +1114,7 @@ internal static class CreativeArchiveDialogs
                 UpdateNewAccountVisibility();
                 accountRegistrationStatus.Text =
                     "アカウントを保存しました。";
+                return true;
             }
             catch (Exception exception)
             {
@@ -1119,13 +1122,17 @@ internal static class CreativeArchiveDialogs
                     exception.ToString());
                 accountRegistrationStatus.Text =
                     "アカウントを保存できませんでした。";
+                return false;
             }
             finally
             {
                 accountSaving = false;
                 saveAccount.IsEnabled = true;
             }
-        };
+        }
+        saveAccount.Click +=
+            async (_, _) =>
+                await RegisterCurrentAccountAsync();
         RenderDestination();
 
         var dialog = CreateDialog(
@@ -1134,28 +1141,98 @@ internal static class CreativeArchiveDialogs
             620,
             800);
         var stack = CreateFormStack(string.Empty);
-        AddPublicationField(stack, "公開先サービス", destination);
-        stack.Children.Add(newDestinationField);
-        AddPublicationField(stack, "関連する作品（任意）", work);
-        stack.Children.Add(savedAccountField);
-        stack.Children.Add(newAccountField);
-        stack.Children.Add(saveAccount);
-        stack.Children.Add(accountRegistrationStatus);
-        AddPublicationField(stack, "投稿タイトル", title);
-        AddPublicationField(stack, "投稿本文", body);
-        AddPublicationField(stack, "投稿タグ", tags);
-        AddPublicationField(stack, "公開日時", published);
-        AddPublicationField(stack, "投稿ID（任意）", externalId);
-        AddPublicationField(stack, "投稿URL（任意）", externalUrl);
-        stack.Children.Add(pixivMetadata);
-        stack.Children.Add(technicalMetadata);
+
+        // Essential path: where / when / which images.
+        // The optional archive metadata lives behind one disclosure,
+        // so the first-run form stays focused even on small screens.
+        var destinationSection =
+            CreatePublicationSection(
+                stack,
+                "1. 公開先とアカウント");
+        AddPublicationField(
+            destinationSection,
+            "公開先サービス（必須）",
+            destination);
+        destinationSection.Children.Add(newDestinationField);
+        destinationSection.Children.Add(savedAccountField);
+        destinationSection.Children.Add(newAccountField);
+
+        var contentSection =
+            CreatePublicationSection(
+                stack,
+                "2. 投稿内容");
+        AddPublicationField(
+            contentSection,
+            "公開日時（必須）",
+            published);
+        AddPublicationField(
+            contentSection,
+            "投稿タイトル（任意）",
+            title);
+        AddPublicationField(
+            contentSection,
+            "投稿本文（任意）",
+            body);
+        AddPublicationField(
+            contentSection,
+            "投稿タグ（任意）",
+            tags);
+        contentSection.Children.Add(pixivMetadata);
+
+        var imageSection =
+            CreatePublicationSection(
+                stack,
+                "3. 投稿画像");
         var orderEditor =
             new CreativePublicationOrderEditor(
                 publicationAssets);
+        if (publicationAssets.Count == 1)
+        {
+            AddPublicationField(
+                imageSection,
+                "選択画像（必須・1枚）",
+                new TextBlock
+                {
+                    Text = publicationAssets[0].DisplayName,
+                    Foreground = LumineDesign.Foreground,
+                    FontSize = LumineDesign.BodyFontSize,
+                    TextWrapping =
+                        Avalonia.Media.TextWrapping.Wrap
+                });
+        }
+        else
+        {
+            AddPublicationField(
+                imageSection,
+                $"投稿画像の順番（必須・{publicationAssets.Count:N0}枚）",
+                orderEditor);
+        }
+
+        var extraFields = new StackPanel
+        {
+            Spacing = LumineDesign.Space12,
+            Margin = new Thickness(12, 8, 12, 12)
+        };
         AddPublicationField(
-            stack,
-            "投稿画像の順番（上から順）",
-            orderEditor);
+            extraFields,
+            "関連する作品（任意）",
+            work);
+        AddPublicationField(
+            extraFields,
+            "投稿ID（任意）",
+            externalId);
+        AddPublicationField(
+            extraFields,
+            "投稿URL（任意）",
+            externalUrl);
+        extraFields.Children.Add(technicalMetadata);
+        stack.Children.Add(
+            new Expander
+            {
+                Header = "その他の情報（任意）",
+                IsExpanded = false,
+                Content = extraFields
+            });
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -1174,7 +1251,16 @@ internal static class CreativeArchiveDialogs
                             destinationValue))
                     {
                         status.Text =
-                            "公開先を入力してください。";
+                            "公開先サービス（必須）を指定してください。";
+                        if (destinationProfile is null)
+                        {
+                            customDestination.Focus();
+                        }
+                        else
+                        {
+                            destination.Focus();
+                        }
+
                         return null;
                     }
 
@@ -1185,7 +1271,8 @@ internal static class CreativeArchiveDialogs
                             out var publishedAt))
                     {
                         status.Text =
-                            "公開日時を読み取れません。";
+                            "公開日時（必須）を確認してください。";
+                        published.Focus();
                         return null;
                     }
 
@@ -1277,7 +1364,21 @@ internal static class CreativeArchiveDialogs
                         externalUrl.Text ?? string.Empty,
                         platformMetadata,
                         orderEditor.OrderedAssetIds);
-                }));
+                },
+                "公開記録を保存",
+                beforeSaveAsync: async () =>
+                {
+                    if (registerAccount is null
+                        || !newAccountField.IsVisible
+                        || string.IsNullOrWhiteSpace(
+                            customAccount.Text))
+                    {
+                        return true;
+                    }
+
+                    return await RegisterCurrentAccountAsync();
+                },
+                saveStatus: status));
         dialog.Content = CreateDialogForm(stack);
         return dialog;
     }
@@ -1522,7 +1623,15 @@ internal static class CreativeArchiveDialogs
         Control control)
     {
         var field = CreateLabeledControl(label, control);
-        var title = field.Children.OfType<TextBlock>().Single();
+        // The field's control may itself be a TextBlock (one-image
+        // summary), so pick the first label, not Single().
+        var title = field.Children.OfType<TextBlock>().First();
+        if (string.IsNullOrWhiteSpace(
+            AutomationProperties.GetName(control)))
+        {
+            AutomationProperties.SetName(control, label);
+        }
+
         title.FontSize = LumineDesign.BodyFontSize;
         title.Foreground = LumineDesign.Foreground;
         return field;
@@ -1534,9 +1643,45 @@ internal static class CreativeArchiveDialogs
         Control control) =>
         stack.Children.Add(CreatePublicationField(label, control));
 
+    private static StackPanel CreatePublicationSection(
+        Panel form,
+        string title)
+    {
+        var fields = new StackPanel
+        {
+            Spacing = LumineDesign.Space12
+        };
+        fields.Children.Add(
+            new TextBlock
+            {
+                Text = title,
+                FontWeight =
+                    Avalonia.Media.FontWeight.SemiBold,
+                FontSize = LumineDesign.DialogTitleFontSize,
+                Foreground = LumineDesign.Foreground
+            });
+        var section = new Border
+        {
+            Background = LumineDesign.Surface,
+            BorderBrush = LumineDesign.Border,
+            BorderThickness = new Thickness(1),
+            CornerRadius =
+                new CornerRadius(LumineDesign.PanelRadius),
+            Padding = new Thickness(16),
+            Child = fields
+        };
+        section.Classes.Add("lumine-publication-section");
+        AutomationProperties.SetName(section, title);
+        form.Children.Add(section);
+        return fields;
+    }
+
     private static StackPanel CreateButtons<T>(
         Window dialog,
-        Func<T?> create)
+        Func<T?> create,
+        string saveLabel = "保存",
+        Func<Task<bool>>? beforeSaveAsync = null,
+        TextBlock? saveStatus = null)
         where T : class
     {
         var cancel =
@@ -1553,18 +1698,90 @@ internal static class CreativeArchiveDialogs
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "保存"
+                    Content = saveLabel
                 });
-        save.Click +=
-            (_, _) =>
-            {
-                var result = create();
-                if (result is not null)
+        if (beforeSaveAsync is null)
+        {
+            // Preserve the original synchronous behavior of unrelated
+            // Work, Group and Relation dialogs.
+            save.Click +=
+                (_, _) =>
                 {
-                    dialog.Close(result);
-                }
-            };
+                    var result = create();
+                    if (result is not null)
+                    {
+                        dialog.Close(result);
+                    }
+                };
+        }
+        else
+        {
+            save.Click +=
+                async (_, _) =>
+                {
+                    if (!save.IsEnabled)
+                    {
+                        return;
+                    }
 
+                    var result = create();
+                    if (result is null)
+                    {
+                        return;
+                    }
+
+                    // Only Publication supplies a persistence hook. It keeps
+                    // the dialog open if account registration fails instead
+                    // of silently losing a reusable account identity.
+                    if (beforeSaveAsync is not null)
+                    {
+                        save.IsEnabled = false;
+                        cancel.IsEnabled = false;
+                        try
+                        {
+                            if (!await beforeSaveAsync())
+                            {
+                                if (saveStatus is not null)
+                                {
+                                    saveStatus.Text =
+                                        "アカウントを登録できませんでした。";
+                                }
+
+                                return;
+                            }
+
+                            result = create();
+                            if (result is null)
+                            {
+                                return;
+                            }
+                        }
+                        catch (Exception exception)
+                        {
+                            System.Diagnostics.Trace.TraceError(
+                                exception.ToString());
+                            if (saveStatus is not null)
+                            {
+                                saveStatus.Text =
+                                    "公開記録を保存できませんでした。";
+                            }
+
+                            return;
+                        }
+                        finally
+                        {
+                            save.IsEnabled = true;
+                            cancel.IsEnabled = true;
+                        }
+                    }
+
+                    if (dialog.IsVisible)
+                    {
+                        dialog.Close(result);
+                    }
+                };
+
+        }
         var row =
             new StackPanel
             {

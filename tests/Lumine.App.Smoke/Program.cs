@@ -9711,12 +9711,60 @@ try
                                     AutomationProperties.GetName(
                                         combo) ==
                                         "登録済みアカウントを選択");
+                        var destinationChoices =
+                            publicationRegistration
+                                .GetVisualDescendants()
+                                .OfType<ComboBox>()
+                                .Single(combo =>
+                                    AutomationProperties.GetName(
+                                        combo) == "公開先を選択");
+                        Require(
+                            destinationChoices.SelectedItem as string
+                                == "新しい公開先を入力",
+                            "New Publication destination must not misleadingly claim that account registration never persists it.");
+
 
                         Require(
-                            newDestination.IsVisible
-                            && newAccount.IsVisible
-                            && register.IsEffectivelyVisible,
-                            "New Publication account cannot be registered inline on first use.");
+                            newDestination.IsEffectivelyVisible
+                            && newAccount.IsEffectivelyVisible
+                            && register.IsEffectivelyVisible
+                            && register.Parent is StackPanel,
+                            "First-use Publication must show account registration in the same field as its input.");
+
+                        var firstUseLayout =
+                            publicationRegistration.Content as Grid
+                            ?? throw new InvalidOperationException(
+                                "Publication lost fixed-footer layout.");
+                        var firstUseFooter =
+                            firstUseLayout.Children
+                                .OfType<StackPanel>()
+                                .Single();
+                        var firstUseSave =
+                            firstUseFooter.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.Content as string
+                                        == "公開記録を保存");
+                        var firstUseStatus =
+                            firstUseFooter.Children
+                                .OfType<TextBlock>()
+                                .Single();
+                        if (visualOutputDirectory is not null)
+                        {
+                            CaptureVisualEvidence(
+                                publicationRegistration,
+                                "publication-guided-new-account");
+                        }
+                        firstUseSave.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            publicationRegistration.IsVisible
+                            && firstUseStatus.Text ==
+                                "公開先サービス（必須）を指定してください。",
+                            "Publication accepted an empty required destination, or failed to show its specific error.");
+
                         newDestination.Text = "Pixiv";
                         newAccount.Text = "smoke-account";
                         register.RaiseEvent(
@@ -9777,47 +9825,90 @@ try
                                 .ToArray();
                         var expectedPublicationLabels = new[]
                         {
-                            "公開先サービス",
-                            "関連する作品（任意）",
-                            "投稿アカウント",
-                            "投稿タイトル",
-                            "投稿本文",
-                            "投稿タグ",
-                            "公開日時",
-                            "投稿ID（任意）",
-                            "投稿URL（任意）",
-                            "投稿画像の順番（上から順）"
+                            "1. 公開先とアカウント",
+                            "公開先サービス（必須）",
+                            "投稿アカウント（任意）",
+                            "2. 投稿内容",
+                            "公開日時（必須）",
+                            "投稿タイトル（任意）",
+                            "投稿本文（任意）",
+                            "投稿タグ（任意）",
+                            "3. 投稿画像",
+                            "選択画像（必須・1枚）"
                         };
+                        var sections =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .Where(border =>
+                                    border.Classes.Contains(
+                                        "lumine-publication-section"))
+                                .ToArray();
                         Require(
-                            expectedPublicationLabels.All(
+                            sections.Length == 3
+                            && expectedPublicationLabels.All(
                                 visiblePublicationLabels.Contains)
                             && !visiblePublicationLabels.Contains(
-                                "新しい公開先名")
+                                "新しい公開先名（必須）")
                             && !visiblePublicationLabels.Contains(
-                                "新しいアカウント名・ID")
+                                "登録するアカウント名（任意）")
                             && !visiblePublicationLabels.Any(
                                 label => label.Contains(
                                     "snapshot",
                                     StringComparison.OrdinalIgnoreCase)
                                     || label.Contains(
                                         "caption",
-                                        StringComparison.OrdinalIgnoreCase)
-                                    || label.Contains(
-                                        "この記録だけの公開先",
-                                        StringComparison.Ordinal)),
-                            "Publication still shows ambiguous labels, hidden new-account fields, or long explanatory captions.");
+                                        StringComparison.OrdinalIgnoreCase)),
+                            "Publication must display 3 intentional sections, truthful required/optional labels, and no irrelevant long captions.");
 
-                        var technicalDetails =
+                        var extraDetails =
                             reopenedPublication
                                 .GetVisualDescendants()
                                 .OfType<Expander>()
                                 .Single(expander =>
                                     expander.Header as string
-                                        == "サイト固有情報（JSON・任意）");
+                                        == "その他の情報（任意）");
                         Require(
-                            !technicalDetails.IsVisible
-                            && !technicalDetails.IsExpanded,
-                            "Pixiv Publication exposed unnecessary custom JSON fields in the normal form.");
+                            !extraDetails.IsExpanded,
+                            "Publication must not expose optional work/URLs/JSON by default.");
+                        extraDetails.IsExpanded = true;
+                        Dispatcher.UIThread.RunJobs();
+                        var expandedLabels =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Where(label =>
+                                    label.IsEffectivelyVisible)
+                                .Select(label =>
+                                    label.Text ?? string.Empty)
+                                .ToArray();
+                        Require(
+                            new[]
+                            {
+                                "関連する作品（任意）",
+                                "投稿ID（任意）",
+                                "投稿URL（任意）"
+                            }.All(expandedLabels.Contains)
+                            && !expandedLabels.Contains(
+                                "サイト固有情報（任意・JSON）"),
+                            "Publication optional fields did not expand correctly or leaked Pixiv-inapplicable JSON.");
+                        extraDetails.IsExpanded = false;
+                        Dispatcher.UIThread.RunJobs();
+
+                        var singleImageReorder =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<CreativePublicationOrderEditor>();
+                        Require(
+                            !singleImageReorder.Any(),
+                            "Single-image Publication exposed pointless reorder UI.");
+
+                        if (visualOutputDirectory is not null)
+                        {
+                            CaptureVisualEvidence(
+                                reopenedPublication,
+                                "publication-guided-existing-account");
+                        }
 
                         registrationOwner.Width = 640;
                         registrationOwner.Height = 480;
@@ -9838,12 +9929,233 @@ try
                                 .OfType<Button>()
                                 .Where(button =>
                                     button.Content as string
-                                        is "保存" or "キャンセル")
+                                        is "公開記録を保存" or "キャンセル")
                                 .Count(button =>
                                     button.IsEffectivelyVisible) == 2,
                             "Publication label cleanup clipped the fixed Save/Cancel footer on a small owner window.");
 
+                        registrationOwner.Width = 500;
+                        registrationOwner.Height = 360;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            reopenedPublication.Height
+                                <= registrationOwner.Bounds.Height - 20
+                            && realPublicationFooter
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Count(button =>
+                                    (button.Content as string
+                                        is "公開記録を保存" or "キャンセル")
+                                    && button.IsEffectivelyVisible) == 2,
+                            "Publication footer was clipped at 500x360.");
+
                         reopenedPublication.Close();
+
+                        var multipleAssets = new[]
+                        {
+                            new CreativePublicationAssetOption(
+                                1, "first-fixture.png"),
+                            new CreativePublicationAssetOption(
+                                2, "second-fixture.png")
+                        };
+                        var manyPublication =
+                            CreativeArchiveDialogs
+                                .CreatePublicationDialogForSmoke(
+                                    registrationOwner,
+                                    new CreativeSelectionPreview(
+                                        2,
+                                        new[]
+                                        {
+                                            "first-fixture.png",
+                                            "second-fixture.png"
+                                        }),
+                                    multipleAssets,
+                                    Array.Empty<WorkInfo>(),
+                                    storedDestinations,
+                                    storedAccounts);
+                        manyPublication.Show(
+                            registrationOwner);
+                        Dispatcher.UIThread.RunJobs();
+                        var orderControl =
+                            manyPublication
+                                .GetVisualDescendants()
+                                .OfType<CreativePublicationOrderEditor>()
+                                .Single();
+                        Require(
+                            orderControl.OrderedAssetIdsForSmoke
+                                .SequenceEqual(new long[] { 1, 2 }),
+                            "Multi-image Publication lost its selected order.");
+                        orderControl.SelectForSmoke(1);
+                        Require(
+                            orderControl.MoveSelectedUpForSmoke()
+                            && orderControl.OrderedAssetIdsForSmoke
+                                .SequenceEqual(new long[] { 2, 1 }),
+                            "Multi-image Publication could not reorder publication assets.");
+                        manyPublication.Close();
+                        Dispatcher.UIThread.RunJobs();
+
+                        // #803: entering an account and pressing ONLY the
+                        // Publication save button must persist the account
+                        // before the Publication dialog closes. An invalid
+                        // required date must block both writes and close.
+                        var automaticAccountWrites = 0;
+                        var automaticAccounts =
+                            new List<PublicationAccountInfo>();
+                        var automaticPublication =
+                            CreativeArchiveDialogs
+                                .CreatePublicationDialogForSmoke(
+                                    registrationOwner,
+                                    inputSelection,
+                                    assets,
+                                    Array.Empty<WorkInfo>(),
+                                    storedDestinations,
+                                    automaticAccounts,
+                                    registerAccount:
+                                        (destinationId, name, identifier) =>
+                                        {
+                                            automaticAccountWrites++;
+                                            var saved =
+                                                new PublicationAccountInfo(
+                                                    90,
+                                                    1,
+                                                    destinationId,
+                                                    name,
+                                                    identifier,
+                                                    DateTimeOffset.UtcNow,
+                                                    DateTimeOffset.UtcNow);
+                                            automaticAccounts.Add(saved);
+                                            return Task.FromResult<
+                                                PublicationAccountInfo?>(
+                                                    saved);
+                                        });
+                        var automaticTask =
+                            automaticPublication
+                                .ShowDialog<CreativePublicationDialogResult?>(
+                                    registrationOwner);
+                        Dispatcher.UIThread.RunJobs();
+                        var automaticName =
+                            automaticPublication
+                                .GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(control =>
+                                    AutomationProperties.GetName(
+                                        control) ==
+                                        "新しいアカウント名を入力");
+                        var automaticDate =
+                            automaticPublication
+                                .GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(control =>
+                                    AutomationProperties.GetName(
+                                        control) ==
+                                        "公開日時（必須）");
+                        Require(
+                            DateTime.TryParseExact(
+                                automaticDate.Text,
+                                "yyyy/MM/dd HH:mm",
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.None,
+                                out _),
+                            "Publication date must default to a readable local date and minute, without seconds or a timezone suffix.");
+                        var automaticFooter =
+                            ((Grid)automaticPublication.Content!)
+                                .Children.OfType<StackPanel>()
+                                .Single();
+                        var automaticSave =
+                            automaticFooter
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.Content as string ==
+                                        "公開記録を保存");
+                        var automaticStatus =
+                            automaticFooter.Children
+                                .OfType<TextBlock>()
+                                .Single();
+                        automaticName.Text = "auto-saved-account";
+                        automaticDate.Text = "not-a-date";
+                        automaticSave.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !automaticTask.IsCompleted
+                            && automaticAccountWrites == 0
+                            && automaticPublication.IsVisible
+                            && automaticStatus.Text ==
+                                "公開日時（必須）を確認してください。",
+                            "Invalid required date must not create the account or close Publication.");
+                        automaticDate.Text =
+                            DateTimeOffset.Now.ToString("O");
+                        automaticSave.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            automaticTask.IsCompletedSuccessfully
+                            && automaticAccountWrites == 1
+                            && automaticAccounts.Single().DisplayName
+                                == "auto-saved-account"
+                            && automaticTask.Result is
+                            {
+                                Account: "auto-saved-account"
+                            },
+                            "Publication Save must persist a new account automatically without a separate registration click.");
+
+                        // Persistence errors must not claim success or
+                        // discard the owner's entered Publication data.
+                        var rejectedPublication =
+                            CreativeArchiveDialogs
+                                .CreatePublicationDialogForSmoke(
+                                    registrationOwner,
+                                    inputSelection,
+                                    assets,
+                                    Array.Empty<WorkInfo>(),
+                                    storedDestinations,
+                                    Array.Empty<PublicationAccountInfo>(),
+                                    registerAccount:
+                                        (_, _, _) =>
+                                            Task.FromResult<
+                                                PublicationAccountInfo?>(
+                                                    null));
+                        var rejectedTask =
+                            rejectedPublication
+                                .ShowDialog<CreativePublicationDialogResult?>(
+                                    registrationOwner);
+                        Dispatcher.UIThread.RunJobs();
+                        rejectedPublication
+                            .GetVisualDescendants()
+                            .OfType<TextBox>()
+                            .Single(control =>
+                                AutomationProperties.GetName(
+                                    control) ==
+                                    "新しいアカウント名を入力")
+                            .Text = "unsaved-name";
+                        var rejectedFooter =
+                            ((Grid)rejectedPublication.Content!)
+                                .Children.OfType<StackPanel>()
+                                .Single();
+                        rejectedFooter
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Content as string ==
+                                    "公開記録を保存")
+                            .RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !rejectedTask.IsCompleted
+                            && rejectedPublication.IsVisible
+                            && rejectedFooter.Children
+                                .OfType<TextBlock>()
+                                .Single().Text ==
+                                "アカウントを登録できませんでした。",
+                            "Failed account persistence closed Publication or silently marked the account as saved.");
+                        rejectedPublication.Close(null);
+                        Dispatcher.UIThread.RunJobs();
+
                         registrationOwner.Close();
                         Dispatcher.UIThread.RunJobs();
                     }
@@ -16074,6 +16386,8 @@ try
                 "tags-edit-custom-color-900x600-text225",
                 "publication-small-640x480",
                 "publication-small-640x480-text225",
+                "publication-guided-new-account",
+                "publication-guided-existing-account",
                 "dialog-confirm-danger",
                 "dialog-confirm-danger-text225",
                 "dialog-notify",
