@@ -852,6 +852,18 @@ internal static class CreativeArchiveDialogs
                 PlaceholderText =
                     "アカウント名または公開ID"
             };
+        AutomationProperties.SetName(
+            destination,
+            "公開先を選択");
+        AutomationProperties.SetName(
+            customDestination,
+            "新しい公開先名を入力");
+        AutomationProperties.SetName(
+            account,
+            "登録済みアカウントを選択");
+        AutomationProperties.SetName(
+            customAccount,
+            "新しいアカウント名を入力");
         var accountRegistrationStatus = CreateStatus();
         var saveAccount =
             LumineDesign.ConfigureSecondaryButton(
