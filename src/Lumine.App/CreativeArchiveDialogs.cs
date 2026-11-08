@@ -791,7 +791,7 @@ internal static class CreativeArchiveDialogs
                             static item =>
                                 item.Name)
                         .Append(
-                            "一時入力（保存しない）")
+                            "新しい公開先を入力")
                         .ToArray(),
                 SelectedIndex = 0
             };
@@ -1084,7 +1084,7 @@ internal static class CreativeArchiveDialogs
                     destination.ItemsSource =
                         destinationProfiles
                             .Select(static item => item.Name)
-                            .Append("一時入力（保存しない）")
+                            .Append("新しい公開先を入力")
                             .ToArray();
                     destination.SelectedIndex =
                         destinationProfiles.Count - 1;
