@@ -1024,6 +1024,15 @@ try
 
     Require(NetVips.Cache.Max == 0, "libvips operation cache was not disabled.");
     Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
+
+    // #367: the real Windows minidump showed execution into the former
+    // libvips image AFTER it was unloaded. A single NativeLibrary.Load
+    // reference is not an OS-level permanent loader PIN. Require that
+    // the process-wide runtime policy applied the stronger guarantee.
+    Require(
+        !OperatingSystem.IsWindows()
+            || VipsRuntimePolicy.IsProcessLifetimePinned,
+        "Windows Image Core failed to permanently pin libvips before generating images.");
     Require(
         NetVips.NetVips.Concurrency
             == imagePolicy.VipsConcurrency
