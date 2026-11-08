@@ -18,6 +18,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private readonly Queue<WorkItem> _foreground = new();
     private readonly Queue<WorkItem> _background = new();
     private readonly SemaphoreSlim _queuedItems = new(0);
+    private readonly SemaphoreSlim _interactiveQueuedItems = new(0);
     private readonly SemaphoreSlim _queueSlots;
     private readonly SemaphoreSlim _interactiveQueueSlots;
     private readonly CancellationTokenSource _shutdown = new();
@@ -74,12 +75,20 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 options.CacheMaintenanceQuietPeriod)
             : null;
 
+        // #634: do not let an ordinary visible PNG decode occupy the
+        // last worker while an Interactive target waits for 874ms.
+        // Reserve capacity INSIDE the existing native worker budget.
+        ReservedInteractiveWorkers = options.WorkerCount >= 4 ? 1 : 0;
         _workers = Enumerable.Range(0, options.WorkerCount)
-            .Select(_ => Task.Run(WorkerLoopAsync))
+            .Select(index => Task.Run(() => WorkerLoopAsync(
+                interactiveOnly: index < ReservedInteractiveWorkers)))
             .ToArray();
     }
 
     public int WorkerCount { get; }
+
+    // Zero for constrained 1-3-worker configurations; never an extra worker.
+    public int ReservedInteractiveWorkers { get; }
 
     public int QueueCapacity { get; }
 
@@ -210,7 +219,15 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             }
         }
 
-        _queuedItems.Release();
+        if (priority == ThumbnailPriority.Interactive
+            && ReservedInteractiveWorkers > 0)
+        {
+            _interactiveQueuedItems.Release();
+        }
+        else
+        {
+            _queuedItems.Release();
+        }
 
         return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -288,6 +305,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
             _shutdown.Dispose();
             _queuedItems.Dispose();
+            _interactiveQueuedItems.Dispose();
             _queueSlots.Dispose();
             _interactiveQueueSlots.Dispose();
             _disposeCompletion.TrySetResult();
@@ -296,6 +314,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         {
             _shutdown.Dispose();
             _queuedItems.Dispose();
+            _interactiveQueuedItems.Dispose();
             _queueSlots.Dispose();
             _interactiveQueueSlots.Dispose();
             _disposeCompletion.TrySetException(exception);
@@ -303,19 +322,24 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         }
     }
 
-    private async Task WorkerLoopAsync()
+    private async Task WorkerLoopAsync(bool interactiveOnly)
     {
         var foregroundBurst = 0;
 
         while (true)
         {
-            await _queuedItems.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+            var queuedItems = interactiveOnly
+                ? _interactiveQueuedItems
+                : _queuedItems;
+            await queuedItems.WaitAsync(_shutdown.Token).ConfigureAwait(false);
 
             WorkItem? item;
             lock (_queueGate)
             {
                 var nextPriority =
-                    SelectNextPriority(
+                    SelectNextPriorityForWorker(
+                        interactiveOnly,
+                        ReservedInteractiveWorkers > 0,
                         _interactive.Count,
                         _foreground.Count,
                         _background.Count,
@@ -424,6 +448,26 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             }
         }
     }
+
+    // Dedicated lane sees only Interactive; generic workers see
+    // Foreground/Background. The fallback shared queue (<=3 workers)
+    // retains the original Interactive -> Foreground -> Background order.
+    private static ThumbnailPriority? SelectNextPriorityForWorker(
+        bool interactiveOnly,
+        bool reservedInteractiveWorker,
+        int interactiveCount,
+        int foregroundCount,
+        int backgroundCount,
+        int foregroundBurst,
+        int maxForegroundBurst) =>
+        SelectNextPriority(
+            interactiveOnly || !reservedInteractiveWorker
+                ? interactiveCount
+                : 0,
+            interactiveOnly ? 0 : foregroundCount,
+            interactiveOnly ? 0 : backgroundCount,
+            foregroundBurst,
+            maxForegroundBurst);
 
     private static ThumbnailPriority? SelectNextPriority(
         int interactiveCount,
