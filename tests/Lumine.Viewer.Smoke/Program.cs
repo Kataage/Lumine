@@ -1194,8 +1194,9 @@ internal static class Program
         {
             for (var attempt = 0;
                  attempt < 2_000
-                 && viewer.Diagnostics.ReadyTiles
-                     < viewer.Diagnostics.AttachedTiles;
+                 && (viewer.Diagnostics.AttachedTiles == 0
+                     || viewer.Diagnostics.ReadyTiles
+                        < viewer.Diagnostics.AttachedTiles);
                  attempt++)
             {
                 Dispatcher.UIThread.RunJobs();
