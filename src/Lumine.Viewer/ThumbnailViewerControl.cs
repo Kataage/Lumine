@@ -2506,90 +2506,97 @@ public sealed class ThumbnailViewerControl : UserControl
 
             Interlocked.Increment(ref _lookaheadSourcesComplete);
 
-            // #805: once the nearby viewport is prepared, continue into
-            // the remaining decoded-cache headroom without requiring another
-            // wheel event. A new viewport cancels this same task immediately.
-            // Never use the idle path for a far seek or opt-out lookahead.
-            if (delay <= session.Options.PrefetchDelay
-                && session.Options.PrefetchRows >= 2
-                && plan.PreferredBitmapRows > 0
-                && preferredRow >= 0
-                && preferredRow < session.Count / columns
-                    + (session.Count % columns == 0 ? 0 : 1))
+            // #805: continue warming nearby decoded presentations while
+            // the user is idle, not just for one two-viewport slice.
+            // The original coalesced lookahead token (5s maximum) and
+            // cancellation on viewport changes still own this work.
+            // Far-seek lookahead reaches here only *after* its target has
+            // become ready, so the newly visible position wins priority.
+            if (session.Options.PrefetchRows >= 2
+                && plan.PreferredBitmapRows > 0)
             {
                 await Task.Delay(
                     TimeSpan.FromMilliseconds(300),
                     cancellationToken).ConfigureAwait(false);
-                var state = session.Diagnostics;
-                var idleRows = ResolveIdleProgressiveRowsForSmoke(
-                    viewportRows,
-                    columns,
-                    session.Options,
-                    state);
-                if (idleRows > 0
-                    && CanWarmAheadOfViewportForSmoke(
-                        state.AttachedTiles,
-                        state.ReadyTiles,
-                        state.ActiveBitmapDecodes))
+                var totalRows = session.Count / columns
+                    + (session.Count % columns == 0 ? 0 : 1);
+                var nextIdleOffset = plan.PreferredBitmapRows;
+
+                while (true)
                 {
-                    // Extend after the *already-predecoded* preferred rows,
-                    // not from the first offscreen row. Work is background
-                    // priority, ordered near-to-far and bounded by both
-                    // entry and byte headroom.
-                    for (var ordinal = 0; ordinal < idleRows; ordinal++)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var state = session.Diagnostics;
+                    var rowsWithHeadroom = ResolveIdleProgressiveRowsForSmoke(
+                        viewportRows, columns, session.Options, state);
+                    if (rowsWithHeadroom == 0
+                        || !CanWarmAheadOfViewportForSmoke(
+                            state.AttachedTiles, state.ReadyTiles,
+                            state.ActiveBitmapDecodes))
+                    {
+                        break;
+                    }
+
+                    // Advance in two-row batches, never in one giant
+                    // uninterruptible request. Recheck the actual decoded
+                    // cache and foreground decoder between every row.
+                    var preparedThisBatch = 0;
+                    var batchRows = Math.Min(2, rowsWithHeadroom);
+                    for (var batchRow = 0; batchRow < batchRows; batchRow++)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        state = session.Diagnostics;
-                        if (!CanWarmAheadOfViewportForSmoke(
-                                state.AttachedTiles,
-                                state.ReadyTiles,
-                                state.ActiveBitmapDecodes)
-                            || ResolveIdleProgressiveRowsForSmoke(
-                                viewportRows,
-                                columns,
-                                session.Options,
-                                state) == 0)
+                        var row = preferredRow
+                            + (long)nextIdleOffset * direction;
+                        if (row < 0 || row >= totalRows)
                         {
                             break;
                         }
 
-                        var row = preferredRow
-                            + (long)(plan.PreferredBitmapRows + ordinal)
-                            * direction;
-                        if (row < 0 || row >=
-                            session.Count / columns
-                            + (session.Count % columns == 0 ? 0 : 1))
+                        state = session.Diagnostics;
+                        if (ResolveIdleProgressiveRowsForSmoke(
+                                viewportRows, columns,
+                                session.Options, state) == 0
+                            || !CanWarmAheadOfViewportForSmoke(
+                                state.AttachedTiles, state.ReadyTiles,
+                                state.ActiveBitmapDecodes))
                         {
                             break;
                         }
 
                         var index = checked(row * columns);
-                        var preparedBefore = Interlocked.Read(
+                        var predecodedBefore = Interlocked.Read(
                             ref _lookaheadBitmapsPredecoded);
                         await PredecodeNextRowAsync(
-                            session,
-                            index,
+                            session, index,
                             checked((int)Math.Min(
-                                session.Count - index,
-                                columns)),
+                                session.Count - index, columns)),
                             cancellationToken).ConfigureAwait(false);
+                        nextIdleOffset++;
+                        preparedThisBatch++;
                         if (Interlocked.Read(
-                                ref _lookaheadBitmapsPredecoded) > preparedBefore)
+                                ref _lookaheadBitmapsPredecoded)
+                            > predecodedBefore)
                         {
                             Interlocked.Increment(
                                 ref _idleProgressiveRowsPrepared);
                         }
                     }
 
-                    // Preserve the *next* row as MRU rather than allowing
-                    // an idle scan to evict the imminent presentation.
+                    if (preparedThisBatch == 0)
+                    {
+                        break;
+                    }
+
+                    // Keep imminent tiles recent throughout a long idle
+                    // pass; protect capacity for the next user gesture.
                     await Dispatcher.UIThread.InvokeAsync(
                         () => PromoteNearestWarmRows(
-                            session,
-                            preferredRow,
-                            oppositeRow,
-                            columns,
-                            cancellationToken));
+                            session, preferredRow, oppositeRow,
+                            columns, cancellationToken));
+                    // A real pointer/seek can supersede the task here.
+                    // No work remains active beyond the original CTS.
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(25),
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
         }
