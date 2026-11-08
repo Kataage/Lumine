@@ -772,9 +772,19 @@ internal sealed class RealLibraryAcceptanceSession
                   + $",native_setup_ms={work.NativeSetupMilliseconds:F1}"
                   + $",render_encode_ms={work.RenderEncodeMilliseconds:F1}"
                 : ",source_phase=unavailable";
+        // Associate costly native evaluation with the original image
+        // type and size, without emitting any private path or file name.
+        // Whitelist the format before writing it to prevent log injection
+        // from untrusted source metadata.
+        var sourceShape = phases is { } sourceTile
+            && sourceTile.SourceFileBytes > 0
+                ? $",source_format={SafeDiagnosticFormat(sourceTile.SourceFormat)}"
+                  + $",source_megapixels={sourceTile.SourceRawPixels / 1_000_000.0:F1}"
+                  + $",source_mib={sourceTile.SourceFileBytes / 1_048_576.0:F2}"
+                : ",source_shape=unavailable";
         Program.Host?.Log.Write(
             "scroll-diagnostics",
-            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}{sourcePhases}");
+            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}{sourcePhases}{sourceShape}");
 
         var failuresAfter =
             grid.Diagnostics.TileLoadFailures;
@@ -785,6 +795,20 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Visible tile failures increased while scrolling to {target:N0}.");
         }
     }
+
+    private static string SafeDiagnosticFormat(string? format) =>
+        format?.Trim().ToLowerInvariant() switch
+        {
+            "jpeg" or "jpg" => "jpeg",
+            "png" => "png",
+            "webp" => "webp",
+            "gif" => "gif",
+            "bmp" => "bmp",
+            "tiff" or "tif" => "tiff",
+            "heif" or "heic" => "heif",
+            "avif" => "avif",
+            _ => "other"
+        };
 
     private async Task MeasureDetailAsync(
         Lumine.Viewer.DetailViewerControl detail,
