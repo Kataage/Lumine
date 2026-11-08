@@ -54,6 +54,56 @@ static void VerifyThumbnailPriorityScheduler()
         Invoke(method, 0, 3, 0, 99, 8)
             == ThumbnailPriority.Foreground,
         "Foreground-only work was incorrectly blocked by the burst counter.");
+
+    // #634: routing is deterministic, independent of unpredictable
+    // PNG decoding duration and Windows file-system cache state.
+    var route = typeof(ThumbnailPipeline).GetMethod(
+        "SelectNextPriorityForWorker",
+        BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "Native Interactive worker reservation routing is missing.");
+
+    static ThumbnailPriority? Route(
+        MethodInfo method,
+        bool interactiveOnly,
+        bool reserved,
+        int interactive,
+        int foreground,
+        int background,
+        int foregroundBurst) =>
+        (ThumbnailPriority?)method.Invoke(
+            null,
+            [
+                interactiveOnly, reserved,
+                interactive, foreground, background,
+                foregroundBurst, 8
+            ]);
+
+    Require(
+        Route(route, interactiveOnly: true, reserved: true,
+            interactive: 1, foreground: 32, background: 32,
+            foregroundBurst: 0) == ThumbnailPriority.Interactive,
+        "Reserved worker failed to select the exact Interactive target.");
+    Require(
+        Route(route, interactiveOnly: true, reserved: true,
+            interactive: 0, foreground: 32, background: 32,
+            foregroundBurst: 0) is null,
+        "Dedicated Interactive worker stole general decode capacity.");
+    Require(
+        Route(route, interactiveOnly: false, reserved: true,
+            interactive: 16, foreground: 32, background: 32,
+            foregroundBurst: 0) == ThumbnailPriority.Foreground,
+        "General worker stole a reserved Interactive queue request.");
+    Require(
+        Route(route, interactiveOnly: false, reserved: true,
+            interactive: 16, foreground: 32, background: 32,
+            foregroundBurst: 8) == ThumbnailPriority.Background,
+        "General worker lost original Foreground/Background fairness.");
+    Require(
+        Route(route, interactiveOnly: false, reserved: false,
+            interactive: 1, foreground: 32, background: 32,
+            foregroundBurst: 0) == ThumbnailPriority.Interactive,
+        "Small-worker shared fallback lost Interactive priority.");
 }
 
 static void VerifyUnreadableOrientationIsUnsafe()
@@ -1055,6 +1105,11 @@ try
     Require(
         pipeline.WorkerCount == imagePolicy.ThumbnailWorkerCount,
         "Worker bound was not mapped from the Core policy.");
+    Require(
+        pipeline.ReservedInteractiveWorkers ==
+            (imagePolicy.ThumbnailWorkerCount >= 4 ? 1 : 0)
+        && pipeline.WorkerCount <= CoreResourcePolicy.MaxThumbnailWorkerCount,
+        "Native Interactive reservation used an extra worker or did not preserve the configured resource cap.");
     Require(
         pipeline.QueueCapacity == imagePolicy.ThumbnailQueueCapacity,
         "Queue bound was not mapped from the Core policy.");
@@ -2157,6 +2212,10 @@ try
                     16L * 1024 * 1024
             }))
     {
+        Require(
+            memoryPipeline.WorkerCount == 1
+                && memoryPipeline.ReservedInteractiveWorkers == 0,
+            "Single-worker pipeline lost the original shared-priority fallback.");
         var memorySource =
             SourceFor(
                 4800,

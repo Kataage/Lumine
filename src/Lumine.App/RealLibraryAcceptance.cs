@@ -565,6 +565,9 @@ internal sealed class RealLibraryAcceptanceSession
             queue.BackgroundQueued.ToString(CultureInfo.InvariantCulture);
         _metadata["thumbnail.active_workers"] =
             queue.ActiveWorkers.ToString(CultureInfo.InvariantCulture);
+        _metadata["thumbnail.reserved_interactive_workers"] =
+            runtime.ReservedInteractiveThumbnailWorkers.ToString(
+                CultureInfo.InvariantCulture);
         WriteBackgroundTechnicalMetadata(
             ViewerTechnicalMetadataBatcher.For(
                 runtime.LibraryService).Diagnostics);
