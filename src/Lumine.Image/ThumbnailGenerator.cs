@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Lumine.Core;
 using NetVips;
 
@@ -126,7 +127,8 @@ internal sealed class ThumbnailGenerator
     public ThumbnailResult GetOrCreate(
         ThumbnailSource source,
         ThumbnailProfile profile,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ThumbnailGenerationPhaseProbe? phaseProbe = null)
     {
         ThumbnailCache.ValidateSource(source);
         ThumbnailCache.ValidateProfile(profile);
@@ -152,13 +154,15 @@ internal sealed class ThumbnailGenerator
                 profile,
                 cacheKey,
                 snapshot: null,
-                cancellationToken);
+                cancellationToken,
+                phaseProbe);
         }
 
         using var snapshot = OpenSnapshot(
             source,
             expectedSourceIdentity: null,
-            cancellationToken);
+            cancellationToken,
+            phaseProbe);
         RememberMetadata(source, snapshot.Metadata);
         var prepared = source.WithMetadata(snapshot.Metadata);
         var preparedKey = ThumbnailCache.GetCacheKey(prepared, profile);
@@ -181,7 +185,8 @@ internal sealed class ThumbnailGenerator
             profile,
             preparedKey,
             snapshot,
-            cancellationToken);
+            cancellationToken,
+            phaseProbe);
     }
 
     private ThumbnailResult GetOrCreateForPreparedSource(
@@ -190,12 +195,19 @@ internal sealed class ThumbnailGenerator
         ThumbnailProfile profile,
         string cacheKey,
         ImageSourceSnapshot? snapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ThumbnailGenerationPhaseProbe? phaseProbe)
     {
         var keyGate = AcquireKeyGate(cacheKey);
         try
         {
+            var keyWaitStarted = Stopwatch.GetTimestamp();
             keyGate.Semaphore.Wait(cancellationToken);
+            if (phaseProbe is not null)
+            {
+                phaseProbe.SourceKeyWaitMilliseconds +=
+                    Stopwatch.GetElapsedTime(keyWaitStarted).TotalMilliseconds;
+            }
             try
             {
                 var cached = TryOpenValid(
@@ -217,13 +229,15 @@ internal sealed class ThumbnailGenerator
                         profile,
                         cacheKey,
                         snapshot,
-                        cancellationToken);
+                        cancellationToken,
+                        phaseProbe);
                 }
 
                 using var validated = OpenSnapshot(
                     source,
                     metadata.SourceIdentity,
-                    cancellationToken);
+                    cancellationToken,
+                    phaseProbe);
                 EnsureSameMetadata(
                     source.SourcePath,
                     metadata,
@@ -235,7 +249,8 @@ internal sealed class ThumbnailGenerator
                     profile,
                     cacheKey,
                     validated,
-                    cancellationToken);
+                    cancellationToken,
+                    phaseProbe);
             }
             finally
             {
@@ -251,16 +266,22 @@ internal sealed class ThumbnailGenerator
     private ImageSourceSnapshot OpenSnapshot(
         ThumbnailSource source,
         string? expectedSourceIdentity,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ThumbnailGenerationPhaseProbe? phaseProbe)
     {
         Interlocked.Increment(ref _metadataProbes);
-
+        var metadataStarted = Stopwatch.GetTimestamp();
         var snapshot = ImageSourceSnapshot.Open(
             source.SourcePath,
             source.FileSize,
             source.ModifiedAtUtcTicks,
             expectedSourceIdentity,
             cancellationToken);
+        if (phaseProbe is not null)
+        {
+            phaseProbe.SourceMetadataMilliseconds +=
+                Stopwatch.GetElapsedTime(metadataStarted).TotalMilliseconds;
+        }
 
         switch (FileSourceIdentityProbe.GetKind(
                     snapshot.Metadata.SourceIdentity))
@@ -301,7 +322,8 @@ internal sealed class ThumbnailGenerator
         ThumbnailProfile profile,
         string cacheKey,
         ImageSourceSnapshot snapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ThumbnailGenerationPhaseProbe? phaseProbe)
     {
         var temporaryPath =
             _storageMode == ThumbnailStorageMode.PersistentDisk
@@ -316,6 +338,7 @@ internal sealed class ThumbnailGenerator
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _sourceOpens);
             sourceOpened = true;
+            var nativeSetupStarted = Stopwatch.GetTimestamp();
 
             if (snapshot.BmpInfo is { } bmp)
             {
@@ -353,6 +376,11 @@ internal sealed class ThumbnailGenerator
                     failOn: Enums.FailOn.Error);
             }
 
+            if (phaseProbe is not null)
+            {
+                phaseProbe.NativeSetupMilliseconds +=
+                    Stopwatch.GetElapsedTime(nativeSetupStarted).TotalMilliseconds;
+            }
             cancellationToken.ThrowIfCancellationRequested();
 
             using var nativeCancellation =
@@ -366,10 +394,18 @@ internal sealed class ThumbnailGenerator
                 byte[] encoded;
                 try
                 {
+                    var renderStarted = Stopwatch.GetTimestamp();
                     encoded = thumbnail.WebpsaveBuffer(
                         q: profile.Quality,
                         smartSubsample: true,
                         keep: Enums.ForeignKeep.None);
+                    if (phaseProbe is not null)
+                    {
+                        // Native Thumbnail is lazily evaluated; this includes
+                        // disk reads, resize, color conversion and WebP encode.
+                        phaseProbe.RenderEncodeMilliseconds +=
+                            Stopwatch.GetElapsedTime(renderStarted).TotalMilliseconds;
+                    }
                 }
                 catch (VipsException)
                     when (cancellationToken.IsCancellationRequested)
@@ -404,11 +440,17 @@ internal sealed class ThumbnailGenerator
 
             try
             {
+                var renderStarted = Stopwatch.GetTimestamp();
                 thumbnail.Webpsave(
                     temporaryPath,
                     q: profile.Quality,
                     smartSubsample: true,
                     keep: Enums.ForeignKeep.None);
+                if (phaseProbe is not null)
+                {
+                    phaseProbe.RenderEncodeMilliseconds +=
+                        Stopwatch.GetElapsedTime(renderStarted).TotalMilliseconds;
+                }
             }
             catch (VipsException)
                 when (cancellationToken.IsCancellationRequested)
@@ -724,4 +766,14 @@ internal sealed class ThumbnailGenerator
         {
         }
     }
+}
+
+// Mutable only within the owning synchronous ThumbnailPipeline worker call.
+// Never stores paths, filenames or image bytes.
+internal sealed class ThumbnailGenerationPhaseProbe
+{
+    public double SourceMetadataMilliseconds { get; set; }
+    public double SourceKeyWaitMilliseconds { get; set; }
+    public double NativeSetupMilliseconds { get; set; }
+    public double RenderEncodeMilliseconds { get; set; }
 }
