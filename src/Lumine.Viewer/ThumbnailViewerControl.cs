@@ -44,6 +44,17 @@ public readonly record struct ViewerTileReadinessDiagnostics(
     double MeanThumbnailSourceMilliseconds,
     double MeanBitmapAcquireMilliseconds);
 
+// Per-target timings use the exact realized tile, not aggregate values
+// across dozens of unrelated tiles during a cold far seek (#536).
+// Does not alter readiness or performance gate decisions.
+public readonly record struct ViewerReadyTileTiming(
+    long Index,
+    bool WarmBitmap,
+    double AttachToReadyMilliseconds,
+    double MetadataMilliseconds,
+    double ThumbnailSourceMilliseconds,
+    double BitmapAcquireMilliseconds);
+
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Design",
     "CA1001:Types that own disposable fields should be disposable",
@@ -555,6 +566,21 @@ public sealed class ThumbnailViewerControl : UserControl
         return details.Count == 0 ? "none" : string.Join(",", details);
     }
 
+    public ViewerReadyTileTiming? GetReadyTileTiming(long index)
+    {
+        foreach (var tile in this.GetVisualDescendants()
+                     .OfType<ViewerTileControl>())
+        {
+            if (tile.Index == index
+                && tile.IsReady)
+            {
+                return tile.ReadyTimingForDiagnostics;
+            }
+        }
+
+        return null;
+    }
+
     public bool IsAssetReady(long index)
     {
         if ((ulong)index >= (ulong)AssetCount)
@@ -1040,6 +1066,16 @@ public sealed class ThumbnailViewerControl : UserControl
                 _selectedIndex,
                 _selectionAnchor));
 
+    // #536: a direct far ScrollToAsset target is the user's requested
+    // visible result. It must not wait behind every other ordinary
+    // Foreground tile in ThumbnailPipeline's bounded worker queue.
+    // Only that exact target is Interactive; normal wheel/nearby tiles
+    // retain Foreground and background lookahead retains Background.
+    internal ViewerThumbnailPriority GetTilePriorityForSmoke(long index) =>
+        Volatile.Read(ref _pendingFarProgrammaticTargetIndex) == index
+            ? ViewerThumbnailPriority.Interactive
+            : ViewerThumbnailPriority.Foreground;
+
     public void ScrollToAsset(long index)
     {
         if ((ulong)index >= (ulong)AssetCount)
@@ -1062,7 +1098,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 CountConsecutiveViewportJumpsForSmoke(
                     _consecutiveFarProgrammaticSeeks, elapsed);
             _lastFarProgrammaticSeekTimestamp = now;
-            _pendingFarProgrammaticTargetIndex = index;
+            Volatile.Write(ref _pendingFarProgrammaticTargetIndex, index);
             // Cancel speculative work immediately rather than allowing
             // an old 8/48ms timer to admit source requests before the
             // virtualized row attachments trigger a new schedule.
@@ -1074,7 +1110,7 @@ public sealed class ThumbnailViewerControl : UserControl
             // burst's background debounce.
             _consecutiveFarProgrammaticSeeks = 0;
             _lastFarProgrammaticSeekTimestamp = 0;
-            _pendingFarProgrammaticTargetIndex = -1;
+            Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         }
 
         _rows.ScrollIntoView(row);
@@ -1554,7 +1590,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private void RebuildRows(long? anchorAssetIndex = null)
     {
         _lastFarProgrammaticSeekTimestamp = 0;
-        _pendingFarProgrammaticTargetIndex = -1;
+        Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFullViewportJumpTimestamp = 0;
         _consecutiveFullViewportJumpCount = 0;
@@ -1801,7 +1837,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // delivered before the inner ScrollViewer updates its offset.
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFarProgrammaticSeekTimestamp = 0;
-        _pendingFarProgrammaticTargetIndex = -1;
+        Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         _consecutiveFullViewportJumpCount = 0;
         _lastFullViewportJumpTimestamp = 0;
         _lastLookaheadScheduledOffsetY =
@@ -1854,7 +1890,7 @@ public sealed class ThumbnailViewerControl : UserControl
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
             _lastFarProgrammaticSeekTimestamp = 0;
-            _pendingFarProgrammaticTargetIndex = -1;
+            Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
             _consecutiveFarProgrammaticSeeks = 0;
             _lastFullViewportJumpTimestamp = 0;
             _consecutiveFullViewportJumpCount = 0;
@@ -2134,7 +2170,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // converges. Resolve visible geometry after the coalescing delay,
         // rather than capturing a stale partial viewport here.
         var session = _session;
-        var farSeekTargetIndex = _pendingFarProgrammaticTargetIndex;
+        var farSeekTargetIndex = Volatile.Read(ref _pendingFarProgrammaticTargetIndex);
         Interlocked.Exchange(ref _lookaheadLastRow, rowIndex);
         Volatile.Write(
             ref _lookaheadLastScheduledDirection,
@@ -2195,7 +2231,7 @@ public sealed class ThumbnailViewerControl : UserControl
                     cancellationToken.ThrowIfCancellationRequested();
                     var shouldWait =
                         await Dispatcher.UIThread.InvokeAsync(
-                            () => _pendingFarProgrammaticTargetIndex
+                            () => Volatile.Read(ref _pendingFarProgrammaticTargetIndex)
                                     == farSeekTargetIndex
                                 && !IsAssetReady(farSeekTargetIndex));
                     if (!shouldWait)
@@ -2961,6 +2997,7 @@ public sealed class ThumbnailViewerControl : UserControl
         private bool _isReady;
         private bool _isLoading;
         private long _loadStartedAt;
+        public ViewerReadyTileTiming? ReadyTimingForDiagnostics { get; private set; }
         private bool _hovered;
         private bool _pressed;
 
@@ -3578,6 +3615,13 @@ public sealed class ThumbnailViewerControl : UserControl
                 ApplyPresentation(
                     warmAsset);
                 MarkReady();
+                ReadyTimingForDiagnostics = new ViewerReadyTileTiming(
+                    _index,
+                    true,
+                    Stopwatch.GetElapsedTime(_loadStartedAt).TotalMilliseconds,
+                    0,
+                    0,
+                    0);
                 _owner.RecordTileReady(
                     _loadStartedAt,
                     warm: true);
@@ -3606,6 +3650,7 @@ public sealed class ThumbnailViewerControl : UserControl
             _loadCancellation?.Cancel();
             _loadCancellation?.Dispose();
             _loadCancellation = null;
+            ReadyTimingForDiagnostics = null;
             _isLoading = false;
 
             if (_isReady)
@@ -3889,7 +3934,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 var thumbnail =
                     await _session.GetThumbnailAsync(
                         asset,
-                        ViewerThumbnailPriority.Foreground,
+                        _owner.GetTilePriorityForSmoke(_index),
                         cancellationToken)
                         .ConfigureAwait(false);
                 var afterSource = Stopwatch.GetTimestamp();
@@ -3918,6 +3963,20 @@ public sealed class ThumbnailViewerControl : UserControl
                         ReplaceBitmapLease(next);
                         ApplyPresentation(asset);
                         MarkReady();
+                        ReadyTimingForDiagnostics = new ViewerReadyTileTiming(
+                            _index,
+                            false,
+                            Stopwatch.GetElapsedTime(_loadStartedAt)
+                                .TotalMilliseconds,
+                            Stopwatch.GetElapsedTime(
+                                _loadStartedAt,
+                                afterMetadata).TotalMilliseconds,
+                            Stopwatch.GetElapsedTime(
+                                afterMetadata,
+                                afterSource).TotalMilliseconds,
+                            Stopwatch.GetElapsedTime(
+                                afterSource,
+                                afterBitmap).TotalMilliseconds);
                         _owner.RecordTileReady(
                             _loadStartedAt,
                             warm: false,
