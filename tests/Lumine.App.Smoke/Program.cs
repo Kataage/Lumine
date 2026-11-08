@@ -10574,6 +10574,8 @@ try
                         && window.IsWorkspacePageVisibleForSmoke
                         && window.IsNavigationPaneVisibleForSmoke
                         && window.PinnedNavigationUsesUnifiedSidebarForSmoke
+                        && ProductAcceptanceFunctionalScenario
+                            .SettingsNavigationMatchesLayout(window)
                         && !window.StatusSurfaceVisibleForSmoke
                         && window.WorkspacePageBoundsForSmoke.Width >= 500
                         && ReferenceEquals(
@@ -10609,6 +10611,36 @@ try
 
                     if (iteration == 0)
                     {
+                        // Real #792 regression: the same Settings destination
+                        // must render correctly with a docked desktop sidebar
+                        // AND with the compact pane hidden, without rebuilding
+                        // the active Viewer shell or relaxing acceptance.
+                        window.Width = 900;
+                        window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        window.NavigateForSmoke("設定");
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.IsCompactNavigationLayout
+                            && ProductAcceptanceFunctionalScenario
+                                .SettingsNavigationMatchesLayout(window)
+                            && ReferenceEquals(
+                                window.CurrentShell, shellBeforeSettings),
+                            "Compact Settings did not hide the contextual sidebar while keeping the workspace page.");
+
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
+                        window.NavigateForSmoke("設定");
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.IsNavigationPinnedForSmoke
+                            && ProductAcceptanceFunctionalScenario
+                                .SettingsNavigationMatchesLayout(window)
+                            && ReferenceEquals(
+                                window.CurrentShell, shellBeforeSettings),
+                            "Wide pinned Settings did not preserve the unified sidebar and workspace page.");
+
                         var settingsWhileEditing =
                             window.WorkspacePageForSmoke;
                         var extensionDraft =
