@@ -744,6 +744,25 @@ internal sealed class RealLibraryAcceptanceSession
             CoreMetricNames.ViewerFastScrollRefresh,
             start);
 
+        // #536: one genuine physical Cold target can take >4 seconds while
+        // Warm is <1.5s. Report the ACTUAL target tile's phase timings,
+        // not misleading means for unrelated visible/obsolete tiles.
+        // Log only the numeric index/durations, never private file names.
+        var totalMilliseconds =
+            System.Diagnostics.Stopwatch.GetElapsedTime(
+                start.Timestamp).TotalMilliseconds;
+        var phases = grid.GetReadyTileTiming(target);
+        var targetPhases = phases is { } tile
+            ? $"warm_bitmap={tile.WarmBitmap},"
+              + $"attach_ms={tile.AttachToReadyMilliseconds:F1},"
+              + $"metadata_ms={tile.MetadataMilliseconds:F1},"
+              + $"source_ms={tile.ThumbnailSourceMilliseconds:F1},"
+              + $"bitmap_ms={tile.BitmapAcquireMilliseconds:F1}"
+            : "tile_phases=unavailable";
+        Program.Host?.Log.Write(
+            "scroll-diagnostics",
+            $"target={target},total_ms={totalMilliseconds:F1},{targetPhases}");
+
         var failuresAfter =
             grid.Diagnostics.TileLoadFailures;
 
