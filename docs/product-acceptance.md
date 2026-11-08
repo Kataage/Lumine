@@ -103,6 +103,31 @@ the app once and answer the 10 product questions and 5 scroll questions.
 The five questions are shared with `Run-ViewerScrollOwnerReview.ps1`, not
 maintained as an independent inconsistent second checklist.
 
+### 2026-11-08 owner-blocker precision without extra sessions (#635)
+
+The same **10+5** questions now explicitly request a check of the actual
+owner-observed release blockers, instead of silently passing a broad generic
+question:
+
+- **#803 / Publication:** on the visible editor, distinguish required from
+  optional inputs and save a posting account once; create another publication
+  and confirm the saved account is offered for reuse. This is a human workflow
+  check, not an automatic SQLite or screenshot verdict.
+- **#761 / compact modal:** resize to a small window (900×600 and, where
+  practical, 500×360); the Save and Cancel footer must stay usable, Esc must
+  dismiss without trapping focus. Do not assume a 225% CI raster proves
+  actual hardware usability.
+- **#805 + #634 / thumbnails:** on first display, wait without scrolling,
+  then scroll one step to observe nearby readiness. After a distant jump,
+  confirm the *new* visible target is shown before distant background work,
+  and check ordinary and reverse scroll after the new location settles.
+
+These details replace wording *inside existing* checklist questions. They do
+not create a 16th question, change report IDs or statuses, request repeated
+Cold/Warm performance runs, or upgrade an unobserved step from pending to
+pass. Strict locale/BOM checks in `build/Test-OwnerReviewLocale.ps1` guard
+the wording against future accidental removal.
+
 The following evidence is produced together without private image pixels
 or library path strings:
 

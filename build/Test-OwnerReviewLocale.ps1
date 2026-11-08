@@ -46,6 +46,26 @@ foreach ($prompt in $prompts) {
         throw "Owner question not Japanese: $($prompt.Groups[1].Value)"
     }
 }
+# The final review must explicitly cover the still-open owner-observed
+# Publication (#803), small-screen modal (#761) and idle scroll (#805)
+# problems, without adding extra questions or treating CI as owner approval.
+$creative = [regex]::Match(
+    $main,
+    '(?s)id = "creativeArchive".*?prompt = "([^"]+)"')
+$responsive = [regex]::Match(
+    $main,
+    '(?s)id = "accessibilityResponsive".*?prompt = "([^"]+)"')
+if (-not $creative.Success -or
+    -not $creative.Groups[1].Value.Contains('必須・任意') -or
+    -not $creative.Groups[1].Value.Contains('アカウント') -or
+    -not $creative.Groups[1].Value.Contains('再利用') -or
+    -not $responsive.Success -or
+    -not $responsive.Groups[1].Value.Contains('保存') -or
+    -not $responsive.Groups[1].Value.Contains('キャンセル') -or
+    -not $responsive.Groups[1].Value.Contains('Esc')) {
+    throw 'Owner product review no longer covers the P0 Publication and modal regressions.'
+}
+
 if (-not $main.Contains('Read-Host "$Prompt [y=問題なし / n=問題あり / s=未確認]"') -or
     -not $main.Contains('return "pending"') -or
     -not $main.Contains('if ($combinedDecision -eq "fail")') -or
@@ -80,6 +100,16 @@ foreach ($check in $checks) {
     if (-not $check.instruction.Contains('確認')) {
         throw "Untranslated scroll procedure: $($check.id)"
     }
+}
+
+$firstForward = @($checks | Where-Object { $_.id -eq 'gridSmallForward' })
+$farRecovery = @($checks | Where-Object { $_.id -eq 'jumpRecovery' })
+if ($firstForward.Count -ne 1 -or
+    -not $firstForward[0].instruction.Contains('先読み') -or
+    $farRecovery.Count -ne 1 -or
+    -not $farRecovery[0].instruction.Contains('ジャンプ先') -or
+    -not $farRecovery[0].instruction.Contains('先読み')) {
+    throw 'The five canonical scroll checks no longer cover idle prefetch and far-jump continuation.'
 }
 
 Write-Host '日本語の確認項目10件・スクロール5件・UTF-8 BOM・未確認判定: PASS'
