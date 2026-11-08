@@ -863,7 +863,7 @@ internal static class CreativeArchiveDialogs
             Text =
                 DateTimeOffset.Now
                     .ToString(
-                        "yyyy-MM-dd HH:mm:ss zzz",
+                        "yyyy/MM/dd HH:mm",
                         CultureInfo.InvariantCulture)
         };
         var externalId = new TextBox
