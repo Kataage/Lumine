@@ -23,7 +23,7 @@ foreach ($file in $files) {
     [void][Management.Automation.Language.Parser]::ParseFile(
         $sourcePath, [ref]$tokens, [ref]$errors)
     if ($errors.Count -ne 0) {
-        throw "PowerShell syntax failed for $file: $($errors[0])"
+        throw "PowerShell syntax failed for ${file}: $($errors[0])"
     }
 
     $text = [IO.File]::ReadAllText(
