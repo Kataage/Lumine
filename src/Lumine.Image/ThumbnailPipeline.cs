@@ -377,16 +377,22 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                     item.Profile,
                     activeCancellation.Token,
                     phaseProbe);
-                result = result with
+                // A second request may find the same cache key after a
+                // worker starts. Never attribute fictitious native decode
+                // costs to that cache hit.
+                if (!result.CacheHit)
                 {
-                    WorkTimings = new ThumbnailWorkTimings(
-                        item.QueueAdmissionMilliseconds,
-                        workerQueueMilliseconds,
-                        phaseProbe.SourceMetadataMilliseconds,
-                        phaseProbe.SourceKeyWaitMilliseconds,
-                        phaseProbe.NativeSetupMilliseconds,
-                        phaseProbe.RenderEncodeMilliseconds)
-                };
+                    result = result with
+                    {
+                        WorkTimings = new ThumbnailWorkTimings(
+                            item.QueueAdmissionMilliseconds,
+                            workerQueueMilliseconds,
+                            phaseProbe.SourceMetadataMilliseconds,
+                            phaseProbe.SourceKeyWaitMilliseconds,
+                            phaseProbe.NativeSetupMilliseconds,
+                            phaseProbe.RenderEncodeMilliseconds)
+                    };
+                }
 
                 item.Completion.TrySetResult(result);
             }
