@@ -2025,6 +2025,26 @@ internal static class Program
                 && session.BitmapCache.Diagnostics.PeakConcurrentDecodes
                     <= DecodedBitmapCache.DecodeConcurrencyLimit,
                 "A single delayed near source blocked other decoded next-row images, or the bounded bitmap budget was exceeded.");
+
+            // #788: after scrolling stops, even a permanently stalled
+            // OFFSCREEN source must lose its speculative waiter before the
+            // existing 10s acceptance gate. Do not cancel visible requests
+            // or disable the adjacent-row warmup tested above.
+            var idleBudget = Stopwatch.StartNew();
+            while (idleBudget.Elapsed < TimeSpan.FromSeconds(8)
+                   && (provider.CancelledBackgroundRequests == 0
+                       || session.Diagnostics.InFlightThumbnailRequests != 0))
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(20);
+            }
+
+            Require(
+                provider.CancelledBackgroundRequests > 0
+                && session.Diagnostics.InFlightThumbnailRequests == 0
+                && viewer.Diagnostics.ReadyTiles > 0,
+                "Stalled offscreen lookahead kept background thumbnail waiters "
+                + "alive after the bounded speculative-work period.");
         }
         finally
         {
@@ -4352,6 +4372,10 @@ internal sealed class StalledFirstBackgroundThumbnailProvider(
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _blockedAssetId;
     private int _backgroundRequests;
+    private int _cancelledBackgroundRequests;
+
+    public int CancelledBackgroundRequests =>
+        Volatile.Read(ref _cancelledBackgroundRequests);
 
     public long BlockedAssetId =>
         Interlocked.Read(ref _blockedAssetId);
@@ -4373,7 +4397,17 @@ internal sealed class StalledFirstBackgroundThumbnailProvider(
             if (Interlocked.CompareExchange(
                     ref _blockedAssetId, asset.Id, 0) == 0)
             {
-                await _release.Task.WaitAsync(cancellationToken);
+                try
+                {
+                    await _release.Task.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    Interlocked.Increment(
+                        ref _cancelledBackgroundRequests);
+                    throw;
+                }
             }
         }
 
