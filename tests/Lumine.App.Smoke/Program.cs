@@ -9713,10 +9713,46 @@ try
                                         "登録済みアカウントを選択");
 
                         Require(
-                            newDestination.IsVisible
-                            && newAccount.IsVisible
-                            && register.IsEffectivelyVisible,
-                            "New Publication account cannot be registered inline on first use.");
+                            newDestination.IsEffectivelyVisible
+                            && newAccount.IsEffectivelyVisible
+                            && register.IsEffectivelyVisible
+                            && register.Parent is StackPanel,
+                            "First-use Publication must show account registration in the same field as its input.");
+
+                        var firstUseLayout =
+                            publicationRegistration.Content as Grid
+                            ?? throw new InvalidOperationException(
+                                "Publication lost fixed-footer layout.");
+                        var firstUseFooter =
+                            firstUseLayout.Children
+                                .OfType<StackPanel>()
+                                .Single();
+                        var firstUseSave =
+                            firstUseFooter.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.Content as string
+                                        == "公開記録を保存");
+                        var firstUseStatus =
+                            firstUseFooter.Children
+                                .OfType<TextBlock>()
+                                .Single();
+                        firstUseSave.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            publicationRegistration.IsVisible
+                            && firstUseStatus.Text ==
+                                "公開先サービス（必須）を指定してください。",
+                            "Publication accepted an empty required destination, or failed to show its specific error.");
+
+                        if (visualOutputDirectory is not null)
+                        {
+                            CaptureVisualEvidence(
+                                publicationRegistration,
+                                "publication-guided-new-account");
+                        }
                         newDestination.Text = "Pixiv";
                         newAccount.Text = "smoke-account";
                         register.RaiseEvent(
@@ -9777,47 +9813,90 @@ try
                                 .ToArray();
                         var expectedPublicationLabels = new[]
                         {
-                            "公開先サービス",
-                            "関連する作品（任意）",
-                            "投稿アカウント",
-                            "投稿タイトル",
-                            "投稿本文",
-                            "投稿タグ",
-                            "公開日時",
-                            "投稿ID（任意）",
-                            "投稿URL（任意）",
-                            "投稿画像の順番（上から順）"
+                            "1. 公開先とアカウント",
+                            "公開先サービス（必須）",
+                            "投稿アカウント（任意）",
+                            "2. 投稿内容",
+                            "公開日時（必須）",
+                            "投稿タイトル（任意）",
+                            "投稿本文（任意）",
+                            "投稿タグ（任意）",
+                            "3. 投稿画像",
+                            "選択画像（必須・1枚）"
                         };
+                        var sections =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .Where(border =>
+                                    border.Classes.Contains(
+                                        "lumine-publication-section"))
+                                .ToArray();
                         Require(
-                            expectedPublicationLabels.All(
+                            sections.Length == 3
+                            && expectedPublicationLabels.All(
                                 visiblePublicationLabels.Contains)
                             && !visiblePublicationLabels.Contains(
-                                "新しい公開先名")
+                                "新しい公開先名（必須）")
                             && !visiblePublicationLabels.Contains(
-                                "新しいアカウント名・ID")
+                                "新しいアカウント名・ID（任意）")
                             && !visiblePublicationLabels.Any(
                                 label => label.Contains(
                                     "snapshot",
                                     StringComparison.OrdinalIgnoreCase)
                                     || label.Contains(
                                         "caption",
-                                        StringComparison.OrdinalIgnoreCase)
-                                    || label.Contains(
-                                        "この記録だけの公開先",
-                                        StringComparison.Ordinal)),
-                            "Publication still shows ambiguous labels, hidden new-account fields, or long explanatory captions.");
+                                        StringComparison.OrdinalIgnoreCase)),
+                            "Publication must display 3 intentional sections, truthful required/optional labels, and no irrelevant long captions.");
 
-                        var technicalDetails =
+                        var extraDetails =
                             reopenedPublication
                                 .GetVisualDescendants()
                                 .OfType<Expander>()
                                 .Single(expander =>
                                     expander.Header as string
-                                        == "サイト固有情報（JSON・任意）");
+                                        == "その他の情報（任意）");
                         Require(
-                            !technicalDetails.IsVisible
-                            && !technicalDetails.IsExpanded,
-                            "Pixiv Publication exposed unnecessary custom JSON fields in the normal form.");
+                            !extraDetails.IsExpanded,
+                            "Publication must not expose optional work/URLs/JSON by default.");
+                        extraDetails.IsExpanded = true;
+                        Dispatcher.UIThread.RunJobs();
+                        var expandedLabels =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Where(label =>
+                                    label.IsEffectivelyVisible)
+                                .Select(label =>
+                                    label.Text ?? string.Empty)
+                                .ToArray();
+                        Require(
+                            new[]
+                            {
+                                "関連する作品（任意）",
+                                "投稿ID（任意）",
+                                "投稿URL（任意）"
+                            }.All(expandedLabels.Contains)
+                            && !expandedLabels.Contains(
+                                "サイト固有情報（任意・JSON）"),
+                            "Publication optional fields did not expand correctly or leaked Pixiv-inapplicable JSON.");
+                        extraDetails.IsExpanded = false;
+                        Dispatcher.UIThread.RunJobs();
+
+                        var singleImageReorder =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<CreativePublicationOrderEditor>();
+                        Require(
+                            !singleImageReorder.Any(),
+                            "Single-image Publication exposed pointless reorder UI.");
+
+                        if (visualOutputDirectory is not null)
+                        {
+                            CaptureVisualEvidence(
+                                reopenedPublication,
+                                "publication-guided-existing-account");
+                        }
 
                         registrationOwner.Width = 640;
                         registrationOwner.Height = 480;
@@ -9838,12 +9917,69 @@ try
                                 .OfType<Button>()
                                 .Where(button =>
                                     button.Content as string
-                                        is "保存" or "キャンセル")
+                                        is "公開記録を保存" or "キャンセル")
                                 .Count(button =>
                                     button.IsEffectivelyVisible) == 2,
                             "Publication label cleanup clipped the fixed Save/Cancel footer on a small owner window.");
 
+                        registrationOwner.Width = 500;
+                        registrationOwner.Height = 360;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            reopenedPublication.Height
+                                <= registrationOwner.Bounds.Height - 20
+                            && realPublicationFooter
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Count(button =>
+                                    button.Content as string
+                                        is "公開記録を保存" or "キャンセル"
+                                    && button.IsEffectivelyVisible) == 2,
+                            "Publication footer was clipped at 500x360.");
+
                         reopenedPublication.Close();
+
+                        var multipleAssets = new[]
+                        {
+                            new CreativePublicationAssetOption(
+                                1, "first-fixture.png"),
+                            new CreativePublicationAssetOption(
+                                2, "second-fixture.png")
+                        };
+                        var manyPublication =
+                            CreativeArchiveDialogs
+                                .CreatePublicationDialogForSmoke(
+                                    registrationOwner,
+                                    new CreativeSelectionPreview(
+                                        2,
+                                        new[]
+                                        {
+                                            "first-fixture.png",
+                                            "second-fixture.png"
+                                        }),
+                                    multipleAssets,
+                                    Array.Empty<WorkInfo>(),
+                                    storedDestinations,
+                                    storedAccounts);
+                        manyPublication.Show(
+                            registrationOwner);
+                        Dispatcher.UIThread.RunJobs();
+                        var orderControl =
+                            manyPublication
+                                .GetVisualDescendants()
+                                .OfType<CreativePublicationOrderEditor>()
+                                .Single();
+                        Require(
+                            orderControl.OrderedAssetIdsForSmoke
+                                .SequenceEqual(new long[] { 1, 2 }),
+                            "Multi-image Publication lost its selected order.");
+                        orderControl.SelectForSmoke(1);
+                        Require(
+                            orderControl.MoveSelectedUpForSmoke()
+                            && orderControl.OrderedAssetIdsForSmoke
+                                .SequenceEqual(new long[] { 2, 1 }),
+                            "Multi-image Publication could not reorder publication assets.");
+                        manyPublication.Close();
                         registrationOwner.Close();
                         Dispatcher.UIThread.RunJobs();
                     }
