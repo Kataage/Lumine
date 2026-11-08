@@ -711,6 +711,10 @@ jobs:
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
 
+      - name: Verify Japanese owner prompts and UTF-8 BOM on Windows PowerShell 5.1
+        shell: powershell
+        run: ./build/Test-OwnerReviewLocale.ps1
+
       - name: Verify viewer scroll owner-review PowerShell 5.1 and pending evidence
         shell: powershell
         run: |
