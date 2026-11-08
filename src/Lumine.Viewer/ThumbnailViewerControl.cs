@@ -2181,26 +2181,6 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            // Snapshot once, after the initial view has had a chance to
-            // finish layout. This dispatcher hop must not be bypassed:
-            // _rows.GetRealizedContainers and TranslatePoint are UI-only.
-            var (beforeRow, afterRow, viewportRows) =
-                await Dispatcher.UIThread.InvokeAsync(
-                    () =>
-                    {
-                        var first = GetFirstVisibleRowIndex();
-                        var last = GetLastVisibleRowIndex();
-                        var outside = ResolveOffscreenLookaheadRowsForSmoke(
-                            attachedRow, first, last);
-                        return (
-                            outside.BeforeRow,
-                            outside.AfterRow,
-                            first >= 0 && last >= first
-                                ? last - first + 1
-                                : 1);
-                    });
-            cancellationToken.ThrowIfCancellationRequested();
-
             // A far programmatic seek must land its requested foreground
             // tile before speculative offscreen source work can occupy all
             // four non-preemptible libvips workers (#536). Ordinary wheel
@@ -2228,6 +2208,26 @@ public sealed class ThumbnailViewerControl : UserControl
                         cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            // Snapshot once, after the initial view has had a chance to
+            // finish layout. This dispatcher hop must not be bypassed:
+            // _rows.GetRealizedContainers and TranslatePoint are UI-only.
+            var (beforeRow, afterRow, viewportRows) =
+                await Dispatcher.UIThread.InvokeAsync(
+                    () =>
+                    {
+                        var first = GetFirstVisibleRowIndex();
+                        var last = GetLastVisibleRowIndex();
+                        var outside = ResolveOffscreenLookaheadRowsForSmoke(
+                            attachedRow, first, last);
+                        return (
+                            outside.BeforeRow,
+                            outside.AfterRow,
+                            first >= 0 && last >= first
+                                ? last - first + 1
+                                : 1);
+                    });
+            cancellationToken.ThrowIfCancellationRequested();
 
             // A small wheel step should look ahead through the next
             // plausible viewport, not stop after two rows. A rapid
