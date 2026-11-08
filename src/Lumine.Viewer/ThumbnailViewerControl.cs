@@ -1040,6 +1040,16 @@ public sealed class ThumbnailViewerControl : UserControl
                 _selectedIndex,
                 _selectionAnchor));
 
+    // #536: a direct far ScrollToAsset target is the user's requested
+    // visible result. It must not wait behind every other ordinary
+    // Foreground tile in ThumbnailPipeline's bounded worker queue.
+    // Only that exact target is Interactive; normal wheel/nearby tiles
+    // retain Foreground and background lookahead retains Background.
+    internal ViewerThumbnailPriority GetTilePriorityForSmoke(long index) =>
+        Volatile.Read(ref _pendingFarProgrammaticTargetIndex) == index
+            ? ViewerThumbnailPriority.Interactive
+            : ViewerThumbnailPriority.Foreground;
+
     public void ScrollToAsset(long index)
     {
         if ((ulong)index >= (ulong)AssetCount)
@@ -3889,7 +3899,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 var thumbnail =
                     await _session.GetThumbnailAsync(
                         asset,
-                        ViewerThumbnailPriority.Foreground,
+                        _owner.GetTilePriorityForSmoke(_index),
                         cancellationToken)
                         .ConfigureAwait(false);
                 var afterSource = Stopwatch.GetTimestamp();
