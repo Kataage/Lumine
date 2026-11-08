@@ -1072,7 +1072,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 CountConsecutiveViewportJumpsForSmoke(
                     _consecutiveFarProgrammaticSeeks, elapsed);
             _lastFarProgrammaticSeekTimestamp = now;
-            _pendingFarProgrammaticTargetIndex = index;
+            Volatile.Write(ref _pendingFarProgrammaticTargetIndex, index);
             // Cancel speculative work immediately rather than allowing
             // an old 8/48ms timer to admit source requests before the
             // virtualized row attachments trigger a new schedule.
@@ -1084,7 +1084,7 @@ public sealed class ThumbnailViewerControl : UserControl
             // burst's background debounce.
             _consecutiveFarProgrammaticSeeks = 0;
             _lastFarProgrammaticSeekTimestamp = 0;
-            _pendingFarProgrammaticTargetIndex = -1;
+            Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         }
 
         _rows.ScrollIntoView(row);
@@ -1564,7 +1564,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private void RebuildRows(long? anchorAssetIndex = null)
     {
         _lastFarProgrammaticSeekTimestamp = 0;
-        _pendingFarProgrammaticTargetIndex = -1;
+        Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFullViewportJumpTimestamp = 0;
         _consecutiveFullViewportJumpCount = 0;
@@ -1811,7 +1811,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // delivered before the inner ScrollViewer updates its offset.
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFarProgrammaticSeekTimestamp = 0;
-        _pendingFarProgrammaticTargetIndex = -1;
+        Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         _consecutiveFullViewportJumpCount = 0;
         _lastFullViewportJumpTimestamp = 0;
         _lastLookaheadScheduledOffsetY =
@@ -1864,7 +1864,7 @@ public sealed class ThumbnailViewerControl : UserControl
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
             _lastFarProgrammaticSeekTimestamp = 0;
-            _pendingFarProgrammaticTargetIndex = -1;
+            Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
             _consecutiveFarProgrammaticSeeks = 0;
             _lastFullViewportJumpTimestamp = 0;
             _consecutiveFullViewportJumpCount = 0;
@@ -2144,7 +2144,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // converges. Resolve visible geometry after the coalescing delay,
         // rather than capturing a stale partial viewport here.
         var session = _session;
-        var farSeekTargetIndex = _pendingFarProgrammaticTargetIndex;
+        var farSeekTargetIndex = Volatile.Read(ref _pendingFarProgrammaticTargetIndex);
         Interlocked.Exchange(ref _lookaheadLastRow, rowIndex);
         Volatile.Write(
             ref _lookaheadLastScheduledDirection,
@@ -2205,7 +2205,7 @@ public sealed class ThumbnailViewerControl : UserControl
                     cancellationToken.ThrowIfCancellationRequested();
                     var shouldWait =
                         await Dispatcher.UIThread.InvokeAsync(
-                            () => _pendingFarProgrammaticTargetIndex
+                            () => Volatile.Read(ref _pendingFarProgrammaticTargetIndex)
                                     == farSeekTargetIndex
                                 && !IsAssetReady(farSeekTargetIndex));
                     if (!shouldWait)
