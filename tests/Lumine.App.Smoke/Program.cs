@@ -9600,6 +9600,176 @@ try
                         Dispatcher.UIThread.RunJobs();
                     }
 
+                    if (iteration == 0)
+                    {
+                        // #797: mount the actual Publication dialog and
+                        // register a destination/account at the point of use.
+                        // Recreating the form with the saved records proves
+                        // that subsequent entries select the same account
+                        // instead of asking for it again.
+                        var registrationOwner = new Window
+                        {
+                            Width = 900,
+                            Height = 700
+                        };
+                        registrationOwner.Show();
+                        Dispatcher.UIThread.RunJobs();
+                        var storedDestinations =
+                            new List<PublicationDestinationInfo>();
+                        var storedAccounts =
+                            new List<PublicationAccountInfo>();
+                        var destinationWrites = 0;
+                        var accountWrites = 0;
+                        var assets =
+                            new[]
+                            {
+                                new CreativePublicationAssetOption(
+                                    1,
+                                    "fixture.png")
+                            };
+                        var inputSelection =
+                            new CreativeSelectionPreview(
+                                1,
+                                new[] { "fixture.png" });
+                        var publicationRegistration =
+                            CreativeArchiveDialogs
+                                .CreatePublicationDialogForSmoke(
+                                    registrationOwner,
+                                    inputSelection,
+                                    assets,
+                                    Array.Empty<WorkInfo>(),
+                                    storedDestinations,
+                                    storedAccounts,
+                                    registerDestination:
+                                        (name, kind) =>
+                                        {
+                                            destinationWrites++;
+                                            var stored =
+                                                new PublicationDestinationInfo(
+                                                    77,
+                                                    1,
+                                                    name,
+                                                    kind,
+                                                    DateTimeOffset.UtcNow,
+                                                    DateTimeOffset.UtcNow);
+                                            storedDestinations.Add(stored);
+                                            return Task.FromResult<
+                                                PublicationDestinationInfo?>(
+                                                    stored);
+                                        },
+                                    registerAccount:
+                                        (destinationId, name, identifier) =>
+                                        {
+                                            accountWrites++;
+                                            var stored =
+                                                new PublicationAccountInfo(
+                                                    88,
+                                                    1,
+                                                    destinationId,
+                                                    name,
+                                                    identifier,
+                                                    DateTimeOffset.UtcNow,
+                                                    DateTimeOffset.UtcNow);
+                                            storedAccounts.Add(stored);
+                                            return Task.FromResult<
+                                                PublicationAccountInfo?>(
+                                                    stored);
+                                        });
+                        publicationRegistration.Show(
+                            registrationOwner);
+                        Dispatcher.UIThread.RunJobs();
+
+                        var newDestination =
+                            publicationRegistration
+                                .GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(control =>
+                                    AutomationProperties.GetName(
+                                        control) ==
+                                        "新しい公開先名を入力");
+                        var newAccount =
+                            publicationRegistration
+                                .GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(control =>
+                                    AutomationProperties.GetName(
+                                        control) ==
+                                        "新しいアカウント名を入力");
+                        var register =
+                            publicationRegistration
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    AutomationProperties.GetName(
+                                        button) ==
+                                        "公開アカウントを登録して次回から再利用");
+                        var accountChoices =
+                            publicationRegistration
+                                .GetVisualDescendants()
+                                .OfType<ComboBox>()
+                                .Single(combo =>
+                                    AutomationProperties.GetName(
+                                        combo) ==
+                                        "登録済みアカウントを選択");
+
+                        Require(
+                            newDestination.IsVisible
+                            && newAccount.IsVisible
+                            && register.IsEffectivelyVisible,
+                            "New Publication account cannot be registered inline on first use.");
+                        newDestination.Text = "Pixiv";
+                        newAccount.Text = "smoke-account";
+                        register.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+
+                        Require(
+                            destinationWrites == 1
+                            && accountWrites == 1
+                            && storedDestinations.Single().Kind
+                                == "pixiv"
+                            && storedAccounts.Single().DestinationId
+                                == storedDestinations.Single().Id
+                            && accountChoices.SelectedIndex == 1
+                            && accountChoices.SelectedItem as string
+                                == "smoke-account"
+                            && !newAccount.IsVisible
+                            && !register.IsVisible,
+                            "Inline Publication account save did not persist and reselect a Pixiv profile.");
+
+                        publicationRegistration.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        var reopenedPublication =
+                            CreativeArchiveDialogs
+                                .CreatePublicationDialogForSmoke(
+                                    registrationOwner,
+                                    inputSelection,
+                                    assets,
+                                    Array.Empty<WorkInfo>(),
+                                    storedDestinations,
+                                    storedAccounts);
+                        reopenedPublication.Show(
+                            registrationOwner);
+                        Dispatcher.UIThread.RunJobs();
+                        var reopenedAccount =
+                            reopenedPublication
+                                .GetVisualDescendants()
+                                .OfType<ComboBox>()
+                                .Single(combo =>
+                                    AutomationProperties.GetName(
+                                        combo) ==
+                                        "登録済みアカウントを選択");
+                        Require(
+                            reopenedAccount.SelectedItem as string
+                                == "smoke-account"
+                            && reopenedAccount.SelectedIndex == 1,
+                            "Reopened Publication did not select its persistently registered account by default.");
+                        reopenedPublication.Close();
+                        registrationOwner.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     if ((iteration == 0 || iteration == 2)
                         && visualOutputDirectory is not null)
                     {
