@@ -111,6 +111,7 @@ public sealed class ThumbnailViewerControl : UserControl
     // Offset reflects the new position. Track explicit far seeks at the
     // call site so stale interim geometry cannot bypass coalescing.
     private long _lastFarProgrammaticSeekTimestamp;
+    private long _pendingFarProgrammaticTargetIndex = -1;
     private int _consecutiveFarProgrammaticSeeks;
     private int _lastLookaheadOffsetDirection;
     private ScrollViewer? _galleryScrollViewer;
@@ -1061,6 +1062,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 CountConsecutiveViewportJumpsForSmoke(
                     _consecutiveFarProgrammaticSeeks, elapsed);
             _lastFarProgrammaticSeekTimestamp = now;
+            _pendingFarProgrammaticTargetIndex = index;
             // Cancel speculative work immediately rather than allowing
             // an old 8/48ms timer to admit source requests before the
             // virtualized row attachments trigger a new schedule.
@@ -1072,6 +1074,7 @@ public sealed class ThumbnailViewerControl : UserControl
             // burst's background debounce.
             _consecutiveFarProgrammaticSeeks = 0;
             _lastFarProgrammaticSeekTimestamp = 0;
+            _pendingFarProgrammaticTargetIndex = -1;
         }
 
         _rows.ScrollIntoView(row);
@@ -1551,6 +1554,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private void RebuildRows(long? anchorAssetIndex = null)
     {
         _lastFarProgrammaticSeekTimestamp = 0;
+        _pendingFarProgrammaticTargetIndex = -1;
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFullViewportJumpTimestamp = 0;
         _consecutiveFullViewportJumpCount = 0;
@@ -1797,6 +1801,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // delivered before the inner ScrollViewer updates its offset.
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFarProgrammaticSeekTimestamp = 0;
+        _pendingFarProgrammaticTargetIndex = -1;
         _consecutiveFullViewportJumpCount = 0;
         _lastFullViewportJumpTimestamp = 0;
         _lastLookaheadScheduledOffsetY =
@@ -1849,6 +1854,7 @@ public sealed class ThumbnailViewerControl : UserControl
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
             _lastFarProgrammaticSeekTimestamp = 0;
+            _pendingFarProgrammaticTargetIndex = -1;
             _consecutiveFarProgrammaticSeeks = 0;
             _lastFullViewportJumpTimestamp = 0;
             _consecutiveFullViewportJumpCount = 0;
@@ -2128,6 +2134,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // converges. Resolve visible geometry after the coalescing delay,
         // rather than capturing a stale partial viewport here.
         var session = _session;
+        var farSeekTargetIndex = _pendingFarProgrammaticTargetIndex;
         Interlocked.Exchange(ref _lookaheadLastRow, rowIndex);
         Volatile.Write(
             ref _lookaheadLastScheduledDirection,
@@ -2147,6 +2154,7 @@ public sealed class ThumbnailViewerControl : UserControl
             columns,
             _lookaheadDirection,
             delay,
+            farSeekTargetIndex,
             _lookaheadCancellation.Token);
         TrackTileLoad(_lookaheadTask);
     }
@@ -2157,6 +2165,7 @@ public sealed class ThumbnailViewerControl : UserControl
         int columns,
         int direction,
         TimeSpan delay,
+        long farSeekTargetIndex,
         CancellationToken cancellationToken)
     {
         try
@@ -2172,6 +2181,34 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            // A far programmatic seek must land its requested foreground
+            // tile before speculative offscreen source work can occupy all
+            // four non-preemptible libvips workers (#536). Ordinary wheel
+            // movement, initial attach and nearby seeks never enter this
+            // gate, retaining immediate neighboring-row warmup (#634).
+            // The lookahead's existing five-second CTS bounds the wait;
+            // a real wheel event/new seek clears the pending target.
+            if (farSeekTargetIndex >= 0)
+            {
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var shouldWait =
+                        await Dispatcher.UIThread.InvokeAsync(
+                            () => _pendingFarProgrammaticTargetIndex
+                                    == farSeekTargetIndex
+                                && !IsAssetReady(farSeekTargetIndex));
+                    if (!shouldWait)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(16),
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+
             // Snapshot once, after the initial view has had a chance to
             // finish layout. This dispatcher hop must not be bypassed:
             // _rows.GetRealizedContainers and TranslatePoint are UI-only.

@@ -51,6 +51,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyPrefetchStartsWhileViewportLoadsAsync(
                         thumbnailPath);
+                    await VerifyFarSeekForegroundPrecedesSpeculationAsync(
+                        thumbnailPath);
                     await VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
                         thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
@@ -1953,6 +1955,109 @@ internal static class Program
             && largeViewer.IsAssetWarmForSmoke(1_099)
             && largeViewer.FirstWarmAssetIndexForSmoke == 76,
             "Large decoded Bitmap capacity did not retain exactly the bounded warm descriptor horizon.");
+    }
+
+    private static async Task VerifyFarSeekForegroundPrecedesSpeculationAsync(
+        string thumbnailPath)
+    {
+        // #536: the four non-preemptible image workers must not be spent
+        // on a far target's OFFSCREEN neighbors while the requested visible
+        // tile remains blocked. Ordinary first-view lookahead still starts
+        // during foreground work (#634), tested by the preceding smoke.
+        var provider = new GatedPriorityThumbnailProvider(thumbnailPath);
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(1_000),
+            provider,
+            new ViewerOptions
+            {
+                TileWidth = 120,
+                TileHeight = 120,
+                TileSpacing = 8,
+                PrefetchRows = 2,
+                PrefetchDelay = TimeSpan.FromMilliseconds(1),
+                DecodedBitmapEntryLimit = 64,
+                DecodedBitmapByteLimit = 32L * 1024 * 1024
+            });
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 900,
+            Height = 600,
+            Content = viewer
+        };
+        window.Show();
+        try
+        {
+            for (var attempt = 0;
+                 attempt < 1_000
+                 && (provider.ForegroundRequests == 0
+                     || provider.BackgroundRequests == 0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                provider.ForegroundRequests > 0
+                && provider.BackgroundRequests > 0,
+                "First-viewport normal lookahead no longer starts while visible foreground is loading.");
+
+            var initialForeground = provider.ForegroundRequests;
+            var initialBackground = provider.BackgroundRequests;
+            const long targetIndex = 800;
+            viewer.ScrollToAsset(targetIndex);
+
+            for (var attempt = 0;
+                 attempt < 1_000
+                 && !provider.HasForegroundRequestFor(targetIndex + 1);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                provider.ForegroundRequests > initialForeground
+                && provider.HasForegroundRequestFor(targetIndex + 1)
+                && !viewer.IsAssetReady(targetIndex),
+                "Far seek did not request the actual target tile as foreground before testing speculative requests.");
+
+            // Give the far-seek scheduler far more than its 48/96ms
+            // debounce, proving it cannot admit backgrounds just because
+            // the timer expired while the actual target remains unready.
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(15);
+            }
+
+            Require(
+                provider.BackgroundRequests == initialBackground,
+                "Far seek admitted offscreen background source work ahead of its blocked foreground target.");
+
+            provider.ReleaseForeground();
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && (!viewer.IsAssetReady(targetIndex)
+                     || provider.BackgroundRequests == initialBackground);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IsAssetReady(targetIndex)
+                && provider.BackgroundRequests > initialBackground,
+                "Far-seek lookahead did not resume after its visible target became ready.");
+        }
+        finally
+        {
+            provider.ReleaseForeground();
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
     }
 
     private static async Task VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
@@ -4426,6 +4531,11 @@ internal sealed class GatedPriorityThumbnailProvider(
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _foregroundRequests;
     private int _backgroundRequests;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte>
+        _foregroundAssetIds = new();
+
+    public bool HasForegroundRequestFor(long assetId) =>
+        _foregroundAssetIds.ContainsKey(assetId);
 
     public int ForegroundRequests =>
         Volatile.Read(ref _foregroundRequests);
@@ -4445,6 +4555,7 @@ internal sealed class GatedPriorityThumbnailProvider(
 
         if (priority == ViewerThumbnailPriority.Foreground)
         {
+            _foregroundAssetIds.TryAdd(asset.Id, 0);
             Interlocked.Increment(
                 ref _foregroundRequests);
             await _foregroundRelease.Task
