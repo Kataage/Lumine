@@ -10037,6 +10037,14 @@ try
                                     AutomationProperties.GetName(
                                         control) ==
                                         "公開日時（必須）");
+                        Require(
+                            DateTime.TryParseExact(
+                                automaticDate.Text,
+                                "yyyy/MM/dd HH:mm",
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.None,
+                                out _),
+                            "Publication date must default to a readable local date and minute, without seconds or a timezone suffix.");
                         var automaticFooter =
                             ((Grid)automaticPublication.Content!)
                                 .Children.OfType<StackPanel>()
