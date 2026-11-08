@@ -632,6 +632,18 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Viewer still had {viewer.InFlightThumbnailRequests} in-flight thumbnail request(s) after the idle-settle window. requests=[{requestDetails}] queue=interactive:{queue.InteractiveQueued},foreground:{queue.ForegroundQueued},background:{queue.BackgroundQueued},active:{queue.ActiveWorkers}.");
         }
 
+        // Cancelling speculative Viewer waiters is not sufficient if the
+        // native thumbnail workers are still doing the abandoned work.
+        // Keep the original 10s idle contract strict at BOTH layers.
+        if (queue.ActiveWorkers != 0
+            || queue.InteractiveQueued != 0
+            || queue.ForegroundQueued != 0
+            || queue.BackgroundQueued != 0)
+        {
+            throw new InvalidOperationException(
+                $"Thumbnail pipeline remained busy after the idle-settle window: interactive={queue.InteractiveQueued}, foreground={queue.ForegroundQueued}, background={queue.BackgroundQueued}, active={queue.ActiveWorkers}.");
+        }
+
         if (viewer.ActiveBitmapDecodes != 0)
         {
             throw new InvalidOperationException(
