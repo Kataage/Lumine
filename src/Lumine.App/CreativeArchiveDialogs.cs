@@ -1623,7 +1623,9 @@ internal static class CreativeArchiveDialogs
         Control control)
     {
         var field = CreateLabeledControl(label, control);
-        var title = field.Children.OfType<TextBlock>().Single();
+        // The field's control may itself be a TextBlock (one-image
+        // summary), so pick the first label, not Single().
+        var title = field.Children.OfType<TextBlock>().First();
         if (string.IsNullOrWhiteSpace(
             AutomationProperties.GetName(control)))
         {
