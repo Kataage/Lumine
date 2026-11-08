@@ -51,6 +51,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyPrefetchStartsWhileViewportLoadsAsync(
                         thumbnailPath);
+                    await VerifyIdleProgressesWithoutScrollingAsync(
+                        thumbnailPath);
                     await VerifyFarSeekForegroundPrecedesSpeculationAsync(
                         thumbnailPath);
                     await VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
@@ -1074,6 +1076,83 @@ internal static class Program
         Require(
             shutdownCache.Diagnostics.ActiveDecodes == 0,
             "ViewerSession.DisposeAsync did not drain active bitmap decode.");
+    }
+
+    private static async Task VerifyIdleProgressesWithoutScrollingAsync(
+        string thumbnailPath)
+    {
+        // #805: prove the mounted Viewer prepares *additional* bitmap
+        // rows while the physical scroll offset never changes. A planner
+        // test alone cannot establish that the asynchronous path runs.
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(1_000),
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                TileWidth = 120,
+                TileHeight = 120,
+                TileSpacing = 8,
+                PrefetchRows = 2,
+                PrefetchDelay = TimeSpan.FromMilliseconds(1),
+                DecodedBitmapEntryLimit = 256,
+                DecodedBitmapByteLimit = 256L * 1024 * 1024
+            });
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 900,
+            Height = 600,
+            Content = viewer
+        };
+        window.Show();
+        try
+        {
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && (viewer.LookaheadDiagnostics.SourcePrefetchCompleted == 0
+                     || viewer.Diagnostics.ReadyTiles
+                        < viewer.Diagnostics.AttachedTiles
+                     || viewer.Diagnostics.AttachedTiles == 0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.Diagnostics.AttachedTiles > 0
+                && viewer.Diagnostics.ReadyTiles
+                    >= viewer.Diagnostics.AttachedTiles
+                && viewer.LookaheadDiagnostics.SourcePrefetchCompleted > 0,
+                "Idle progressive test never completed its ordinary visible/nearby lookahead.");
+            var visibleBefore = viewer.FirstVisibleAssetIndex;
+            var lastBefore = viewer.LastVisibleAssetIndex;
+            var scheduleBefore = viewer.LookaheadDiagnostics.Scheduled;
+
+            // There is no ScrollToAsset, wheel or offset mutation here.
+            // Once the near pass finishes, the quiet worker should use
+            // spare bitmap capacity for at least one additional row.
+            for (var attempt = 0;
+                 attempt < 2_500
+                 && viewer.IdleProgressiveRowsPreparedForSmoke == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IdleProgressiveRowsPreparedForSmoke > 0
+                && viewer.FirstVisibleAssetIndex == visibleBefore
+                && viewer.LastVisibleAssetIndex == lastBefore
+                && viewer.LookaheadDiagnostics.Scheduled == scheduleBefore,
+                "Idle progressive prefetch did not decode additional offscreen rows without scrolling, or unexpectedly changed the viewport.");
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
     }
 
     private static async Task VerifyPrefetchStartsWhileViewportLoadsAsync(
