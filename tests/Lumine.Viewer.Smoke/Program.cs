@@ -51,6 +51,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyPrefetchStartsWhileViewportLoadsAsync(
                         thumbnailPath);
+                    await VerifyIdleProgressesWithoutScrollingAsync(
+                        thumbnailPath);
                     await VerifyFarSeekForegroundPrecedesSpeculationAsync(
                         thumbnailPath);
                     await VerifySlowNearSourceDoesNotBlockOtherBitmapsAsync(
@@ -1076,6 +1078,83 @@ internal static class Program
             "ViewerSession.DisposeAsync did not drain active bitmap decode.");
     }
 
+    private static async Task VerifyIdleProgressesWithoutScrollingAsync(
+        string thumbnailPath)
+    {
+        // #805: prove the mounted Viewer prepares *additional* bitmap
+        // rows while the physical scroll offset never changes. A planner
+        // test alone cannot establish that the asynchronous path runs.
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(1_000),
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                TileWidth = 120,
+                TileHeight = 120,
+                TileSpacing = 8,
+                PrefetchRows = 2,
+                PrefetchDelay = TimeSpan.FromMilliseconds(1),
+                DecodedBitmapEntryLimit = 256,
+                DecodedBitmapByteLimit = 256L * 1024 * 1024
+            });
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 900,
+            Height = 600,
+            Content = viewer
+        };
+        window.Show();
+        try
+        {
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && (viewer.LookaheadDiagnostics.SourcePrefetchCompleted == 0
+                     || viewer.Diagnostics.ReadyTiles
+                        < viewer.Diagnostics.AttachedTiles
+                     || viewer.Diagnostics.AttachedTiles == 0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.Diagnostics.AttachedTiles > 0
+                && viewer.Diagnostics.ReadyTiles
+                    >= viewer.Diagnostics.AttachedTiles
+                && viewer.LookaheadDiagnostics.SourcePrefetchCompleted > 0,
+                "Idle progressive test never completed its ordinary visible/nearby lookahead.");
+            var visibleBefore = viewer.FirstVisibleAssetIndex;
+            var lastBefore = viewer.LastVisibleAssetIndex;
+            var scheduleBefore = viewer.LookaheadDiagnostics.Scheduled;
+
+            // There is no ScrollToAsset, wheel or offset mutation here.
+            // Once the near pass finishes, the quiet worker should use
+            // spare bitmap capacity for at least one additional row.
+            for (var attempt = 0;
+                 attempt < 2_500
+                 && viewer.IdleProgressiveRowsPreparedForSmoke == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IdleProgressiveRowsPreparedForSmoke > 0
+                && viewer.FirstVisibleAssetIndex == visibleBefore
+                && viewer.LastVisibleAssetIndex == lastBefore
+                && viewer.LookaheadDiagnostics.Scheduled == scheduleBefore,
+                "Idle progressive prefetch did not decode additional offscreen rows without scrolling, or unexpectedly changed the viewport.");
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
     private static async Task VerifyPrefetchStartsWhileViewportLoadsAsync(
         string thumbnailPath)
     {
@@ -1339,6 +1418,49 @@ internal static class Program
             && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
                 attachedTiles: 7, readyTiles: 8, activeBitmapDecodes: 0),
             "Small-view normal scroll did not warm its next row after one slow tile, or speculation stole active foreground decode capacity.");
+
+        // #805: idle work may continue beyond the first lookahead,
+        // but only when strict decoded entry/byte headroom remains.
+        var idleOptions = new ViewerOptions
+        {
+            DecodedBitmapEntryLimit = 128,
+            DecodedBitmapByteLimit = 128L * 1024 * 1024,
+            DecodedThumbnailMaxDimension = 384
+        };
+        var idlePartial = new ViewerRuntimeDiagnostics(
+            0, 0, 0, 0, 0, 0, 35, 35,
+            40, 40L * 384 * 384 * 4, 0, 0, null);
+        var idleExhausted = idlePartial with
+        {
+            DecodedBitmapEntries = 128
+        };
+        Require(
+            ThumbnailViewerControl.ResolveIdleProgressiveRowsForSmoke(
+                visibleRows: 5,
+                columns: 7,
+                idleOptions,
+                idlePartial) == 7
+            && ThumbnailViewerControl.ResolveIdleProgressiveRowsForSmoke(
+                visibleRows: 5,
+                columns: 7,
+                idleOptions,
+                idleExhausted) == 0
+            && ThumbnailViewerControl.ResolveIdleProgressiveRowsForSmoke(
+                visibleRows: 5,
+                columns: 7,
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 128,
+                    DecodedBitmapByteLimit = 16L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                },
+                idlePartial) == 0
+            && ThumbnailViewerControl.ResolveIdleProgressiveRowsForSmoke(
+                visibleRows: 0,
+                columns: 7,
+                idleOptions,
+                idlePartial) == 0,
+            "Idle progressive warmup exceeded the decoded bitmap memory budget or did not use spare capacity.");
 
         // The enlarged native cache is retained across scrolls, but
         // cold startup must not eagerly enqueue the entire GiB budget.
