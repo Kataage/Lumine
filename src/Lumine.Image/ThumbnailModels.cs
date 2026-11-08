@@ -88,6 +88,16 @@ public sealed record ThumbnailSource(
         Lumine.Core.FileSourceIdentityProbe.IsValid(value);
 }
 
+// Per-completed-source phase data only. Contains no image path, name or pixels.
+// The native operation is lazy: render/encode includes source read and resize.
+public readonly record struct ThumbnailWorkTimings(
+    double QueueAdmissionMilliseconds,
+    double WorkerQueueMilliseconds,
+    double SourceMetadataMilliseconds,
+    double SourceKeyWaitMilliseconds,
+    double NativeSetupMilliseconds,
+    double RenderEncodeMilliseconds);
+
 public sealed record ThumbnailResult(
     string CacheKey,
     string CachePath,
@@ -96,7 +106,8 @@ public sealed record ThumbnailResult(
     int Height,
     long CacheFileBytes,
     SourceTechnicalMetadata? SourceMetadata = null,
-    byte[]? EncodedBytes = null);
+    byte[]? EncodedBytes = null,
+    ThumbnailWorkTimings? WorkTimings = null);
 
 public sealed record ThumbnailCacheStats(
     long FileCount,
