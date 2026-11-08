@@ -2508,7 +2508,10 @@ public sealed class ThumbnailViewerControl : UserControl
             // Never use the idle path for a far seek or opt-out lookahead.
             if (delay <= session.Options.PrefetchDelay
                 && session.Options.PrefetchRows >= 2
-                && plan.PreferredBitmapRows > 0)
+                && plan.PreferredBitmapRows > 0
+                && preferredRow >= 0
+                && preferredRow < session.Count / columns
+                    + (session.Count % columns == 0 ? 0 : 1))
             {
                 await Task.Delay(
                     TimeSpan.FromMilliseconds(300),
