@@ -16366,6 +16366,8 @@ try
                 "tags-edit-custom-color-900x600-text225",
                 "publication-small-640x480",
                 "publication-small-640x480-text225",
+                "publication-guided-new-account",
+                "publication-guided-existing-account",
                 "dialog-confirm-danger",
                 "dialog-confirm-danger-text225",
                 "dialog-notify",
