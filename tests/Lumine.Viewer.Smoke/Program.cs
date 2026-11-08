@@ -2010,7 +2010,7 @@ internal static class Program
 
             for (var attempt = 0;
                  attempt < 1_000
-                 && provider.ForegroundRequests == initialForeground;
+                 && !provider.HasForegroundRequestFor(targetIndex + 1);
                  attempt++)
             {
                 Dispatcher.UIThread.RunJobs();
@@ -2019,8 +2019,9 @@ internal static class Program
 
             Require(
                 provider.ForegroundRequests > initialForeground
+                && provider.HasForegroundRequestFor(targetIndex + 1)
                 && !viewer.IsAssetReady(targetIndex),
-                "Far seek did not admit visible foreground work before testing speculative requests.");
+                "Far seek did not request the actual target tile as foreground before testing speculative requests.");
 
             // Give the far-seek scheduler far more than its 48/96ms
             // debounce, proving it cannot admit backgrounds just because
@@ -4530,6 +4531,11 @@ internal sealed class GatedPriorityThumbnailProvider(
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _foregroundRequests;
     private int _backgroundRequests;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte>
+        _foregroundAssetIds = new();
+
+    public bool HasForegroundRequestFor(long assetId) =>
+        _foregroundAssetIds.ContainsKey(assetId);
 
     public int ForegroundRequests =>
         Volatile.Read(ref _foregroundRequests);
@@ -4549,6 +4555,7 @@ internal sealed class GatedPriorityThumbnailProvider(
 
         if (priority == ViewerThumbnailPriority.Foreground)
         {
+            _foregroundAssetIds.TryAdd(asset.Id, 0);
             Interlocked.Increment(
                 ref _foregroundRequests);
             await _foregroundRelease.Task
