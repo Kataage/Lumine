@@ -152,6 +152,12 @@ public sealed class ViewerOptions
     // viewport itself is always loaded at Foreground priority.
     public int PrefetchRows { get; init; } = 2;
 
+    // #634: speculative source requests must never fill every native
+    // thumbnail worker. Leave at least one worker available for visible
+    // foreground / interactive requests during Cold far seeks. This is
+    // an admission limit, not a smaller bitmap/source memory cache.
+    public int BackgroundSourceRequestLimit { get; init; } = 2;
+
     // Give foreground requests a brief chance to enqueue, but do not
     // require all visible tiles to finish before warming adjacent rows.
     public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(8);
@@ -182,6 +188,8 @@ public sealed class ViewerOptions
 
         return new ViewerOptions
         {
+            BackgroundSourceRequestLimit = Math.Max(
+                1, policy.ThumbnailWorkerCount / 2),
             DecodedBitmapEntryLimit =
                 policy.DecodedThumbnailEntryLimit,
             DecodedBitmapByteLimit =
