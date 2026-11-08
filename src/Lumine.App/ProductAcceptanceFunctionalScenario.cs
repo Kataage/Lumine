@@ -349,10 +349,7 @@ internal static class ProductAcceptanceFunctionalScenario
             window.NavigateForSmoke("設定");
 
             Require(
-                window.WorkspacePageForSmoke
-                    is Border
-                && window.IsWorkspacePageVisibleForSmoke
-                && !window.IsNavigationPaneVisibleForSmoke
+                SettingsNavigationMatchesLayout(window)
                 && window.SettingsSnapshot.DataPaths.RootPath
                     == dataPaths.RootPath
                 && window.SettingsSnapshot
@@ -440,6 +437,25 @@ internal static class ProductAcceptanceFunctionalScenario
             "Product navigation hierarchy drifted from the approved Lumine information architecture.");
     }
 
+    // The production shell deliberately docks a pinned sidebar on wide
+    // screens, including Settings. Compact and unpinned Settings hide the
+    // contextual pane. Validate the ACTUAL responsive product contract,
+    // not a universal pane-hidden assumption that fails on real desktops.
+    internal static bool SettingsNavigationMatchesLayout(MainWindow window)
+    {
+        var expectsDockedSidebar =
+            window.IsNavigationPinnedForSmoke
+            && !window.IsCompactNavigationLayout;
+
+        return window.WorkspacePageForSmoke is Border
+            && window.IsWorkspacePageVisibleForSmoke
+            && window.NavigationContentForSmoke is null
+            && window.IsNavigationPaneVisibleForSmoke
+                == expectsDockedSidebar
+            && (!expectsDockedSidebar
+                || window.PinnedNavigationUsesUnifiedSidebarForSmoke);
+    }
+
     private static Task VerifyNavigationAsync(
         MainWindow window,
         CancellationToken cancellationToken)
@@ -456,9 +472,7 @@ internal static class ProductAcceptanceFunctionalScenario
                     destination,
                     "設定",
                     StringComparison.Ordinal)
-                    ? window.WorkspacePageForSmoke is not null
-                        && window.IsWorkspacePageVisibleForSmoke
-                        && !window.IsNavigationPaneVisibleForSmoke
+                    ? SettingsNavigationMatchesLayout(window)
                     : window.NavigationContentForSmoke is not null
                         && !window.IsWorkspacePageVisibleForSmoke;
 
