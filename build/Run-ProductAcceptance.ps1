@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$Exe,
 
@@ -36,18 +36,18 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 if ($IncludeViewerScrollReview -and -not $InteractiveReview) {
-    throw "The consolidated physical scroll review requires -InteractiveReview."
+    throw "スクロール確認には -InteractiveReview を指定してください。"
 }
 if ($IncludeViewerScrollReview -and $ThumbnailStorageMode -ne "MemoryOnly") {
-    throw "Issue #634 final scroll review requires MemoryOnly thumbnail storage."
+    throw "スクロール確認にはサムネイル保存方式 MemoryOnly が必要です。"
 }
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-    throw "Lumine product acceptance requires Windows."
+    throw "Lumineの製品検証はWindowsで実行してください。"
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) {
-    throw "Lumine product acceptance requires Windows x64."
+    throw "Lumineの製品検証には64ビットWindowsが必要です。"
 }
 
 $exePath = (Resolve-Path -LiteralPath $Exe).Path
@@ -65,7 +65,7 @@ $dataRoot =
     Join-Path $outputRoot "data"
 
 if (-not (Test-Path -LiteralPath $coreWrapper)) {
-    throw "Missing core acceptance wrapper: $coreWrapper"
+    throw "自動検証スクリプトが見つかりません: $coreWrapper"
 }
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
@@ -96,11 +96,11 @@ if (-not $UseExistingAutomatedResults) {
     & $coreWrapper @coreArguments
 }
 else {
-    Write-Host "Using existing automated acceptance results from $outputRoot"
+    Write-Host "既存の自動検証結果を再利用します: $outputRoot"
 }
 
 if (-not (Test-Path -LiteralPath $coreSummaryPath)) {
-    throw "Core acceptance did not produce summary.json."
+    throw "自動検証のsummary.jsonが見つかりません。"
 }
 
 $coreSummary =
@@ -108,11 +108,11 @@ $coreSummary =
         ConvertFrom-Json
 
 if ($coreSummary.automatedDecision -ne "pass") {
-    throw "Core acceptance summary did not report pass."
+    throw "自動検証が合格していません。手動確認を合格扱いにはできません。"
 }
 
 if ($coreSummary.productAutomated.result -ne "pass") {
-    throw "NativeAOT product workflow acceptance did not report pass."
+    throw "NativeAOT製品機能の自動検証が合格していません。"
 }
 
 $productGateNames = @(
@@ -129,13 +129,13 @@ $productGateNames = @(
 
 foreach ($gateName in $productGateNames) {
     if ([string]$coreSummary.productAutomated.$gateName -ne "pass") {
-        throw "Product automated gate '$gateName' did not report pass."
+        throw "製品機能の自動検証「$gateName」が合格していません。"
     }
 }
 
 $reviewDecisionPath = Join-Path $PSScriptRoot "OwnerReviewDecisions.ps1"
 if (-not (Test-Path -LiteralPath $reviewDecisionPath -PathType Leaf)) {
-    throw "Missing combined owner decision checks: $reviewDecisionPath"
+    throw "手動判定スクリプトが見つかりません: $reviewDecisionPath"
 }
 . $reviewDecisionPath
 
@@ -144,13 +144,13 @@ $viewerScrollReportPath = Join-Path $outputRoot "viewer-scroll-owner-report.json
 if ($IncludeViewerScrollReview) {
     $sharedChecksPath = Join-Path $PSScriptRoot "ViewerScrollReviewChecks.ps1"
     if (-not (Test-Path -LiteralPath $sharedChecksPath -PathType Leaf)) {
-        throw "Missing shared physical scroll checklist: $sharedChecksPath"
+        throw "スクロール確認の共通チェックリストが見つかりません: $sharedChecksPath"
     }
     . $sharedChecksPath
     $viewerScrollChecks = @(New-ViewerScrollReviewChecks)
     if ($viewerScrollChecks.Count -ne 5 -or
         @($viewerScrollChecks | Where-Object { $_.status -ne "pending" }).Count -ne 0) {
-        throw "Consolidated Viewer scroll checklist was incomplete or already answered."
+        throw "スクロール確認の5項目が不足しているか、既に回答されています。"
     }
     # Never let an earlier review report be mistaken for current approval.
     if (Test-Path -LiteralPath $viewerScrollReportPath) {
@@ -161,62 +161,62 @@ if ($IncludeViewerScrollReview) {
 $manualChecks = @(
     [ordered]@{
         id = "identity"
-        title = "Lumine identity"
-        prompt = "Does the app clearly look and feel like Lumine, with coherent dark branding and no generic Core/test-shell surface in normal use?"
+        title = "Lumineのデザイン"
+        prompt = "全体のダークデザインに統一感があり、開発用の仮画面ではなくLumineとして自然に使えますか？"
         status = "pending"
     },
     [ordered]@{
         id = "navigation"
-        title = "Shell and navigation"
-        prompt = "Do global navigation, contextual Library/Folder/Tag/Publication panes and the image canvas feel like one coherent hierarchy, including overlay behavior at compact width?"
+        title = "メニューと画面の構成"
+        prompt = "ライブラリ・フォルダ・タグ・公開履歴のメニューと画像一覧がわかりやすく、小さな画面でもメニューが自然に開閉しますか？"
         status = "pending"
     },
     [ordered]@{
         id = "browse"
-        title = "Browse usability"
-        prompt = "Are Grid/List, density, search/sort/filter, tag assignment and fast direction-reversing scroll responsive without disruptive blanking or excessive command chrome?"
+        title = "画像一覧の使いやすさ"
+        prompt = "グリッド・リスト・表示密度・検索・並び替え・絞り込み・タグ付けを使いやすく操作でき、スクロール時に不自然な空白が出ませんか？"
         status = "pending"
     },
     [ordered]@{
         id = "organization"
-        title = "Organization workflow"
-        prompt = "Do single/Ctrl/Shift selection, Inspector metadata editing, bulk actions and destructive confirmations feel clear and dependable?"
+        title = "画像の整理と編集"
+        prompt = "単一・Ctrl・Shiftによる選択、詳細情報の編集、一括操作、削除確認がわかりやすく安全に使えますか？"
         status = "pending"
     },
     [ordered]@{
         id = "viewer"
-        title = "Viewer discoverability and comfort"
-        prompt = "Can a first-time user discover how to open an image, and are previous/next, Fit, zoom, 1:1, Info, fullscreen, pan and close/back clear without relying on hidden shortcuts?"
+        title = "画像ビューアーの操作"
+        prompt = "画像の開き方と、前後移動・画面に合わせる・拡大縮小・原寸・情報・全画面・移動・戻る操作が、隠れたショートカットに頼らずわかりますか？"
         status = "pending"
     },
     [ordered]@{
         id = "productStates"
-        title = "Product states and feedback"
-        prompt = "Do Welcome, Loading, Empty, No Match and recoverable Error each show one clear message and next action, with success feedback transient and technical detail secondary?"
+        title = "案内・読み込み・エラー表示"
+        prompt = "初回・読み込み中・画像なし・検索結果なし・エラー時の表示は簡潔で、次に何をすべきかわかりますか？"
         status = "pending"
     },
     [ordered]@{
         id = "creativeArchive"
-        title = "Creative archive"
-        prompt = "Are Work, Generation Group, directed Relation and Publication understandable and usable without AI?"
+        title = "作品・公開履歴の管理"
+        prompt = "作品・生成グループ・画像の関連付け・公開履歴は、各項目の意味がわかり、問題なく操作できますか？"
         status = "pending"
     },
     [ordered]@{
         id = "settingsPortable"
-        title = "Settings and storage"
-        prompt = "Are common Settings easy to find, advanced cache/storage/diagnostics progressively disclosed, and portable/storage behavior free of surprising side effects?"
+        title = "設定と保存先"
+        prompt = "よく使う設定が見つかりやすく、詳細設定は必要なときだけ表示され、保存先やポータブル動作に問題がありませんか？"
         status = "pending"
     },
     [ordered]@{
         id = "accessibilityResponsive"
-        title = "Accessibility and responsive polish"
-        prompt = "Does keyboard-only navigation follow the visual order; are 900x600, 1024x768, 1440x900 and 1920x1080 usable; and are 100%, 125%, 150%, 200% and 225% Windows text scales clear without clipping or color-only selection/destructive cues?"
+        title = "キーボード操作と小画面表示"
+        prompt = "キーボード操作の順序は自然で、900×600～1920×1080やWindowsの文字倍率100～225%でも文字・ボタンが欠けず、選択状態も区別できますか？"
         status = "pending"
     },
     [ordered]@{
         id = "productVerdict"
-        title = "Daily-use product verdict"
-        prompt = "Did you observe no unresolved P0/P1 issue, and does normal daily use feel like Lumine rather than a technical prototype?"
+        title = "日常利用の総合評価"
+        prompt = "重大な未解決問題がなく、試作品ではなく日常的に使える完成度だと判断できますか？"
         status = "pending"
     }
 )
@@ -229,14 +229,14 @@ function Write-ManualChecklist {
 
     $lines =
         New-Object System.Collections.Generic.List[string]
-    $lines.Add("# Lumine v2 Product Acceptance manual checklist")
+    $lines.Add("# Lumine v2 実機操作チェックリスト")
     $lines.Add("")
-    $lines.Add("Automated NativeAOT acceptance: PASS")
-    $lines.Add("Revision: $($coreSummary.appRevision)")
-    $lines.Add("Assets: $($coreSummary.assetCount)")
-    $lines.Add("Library path is intentionally not written; summary uses the existing path hash.")
+    $lines.Add("NativeAOT自動検証: 合格")
+    $lines.Add("ビルド識別子: $($coreSummary.appRevision)")
+    $lines.Add("画像件数: $($coreSummary.assetCount)")
+    $lines.Add("画像ライブラリの実パスは記録しません。既存のパス識別ハッシュを使用します。")
     $lines.Add("")
-    $lines.Add("Use the same representative library and the same acceptance data root. Do not judge from CI alone.")
+    $lines.Add("同じ画像ライブラリと検証データを使用してください。CI結果だけで実機合格と判断しないでください。")
     $lines.Add("")
 
     foreach ($check in $Checks) {
@@ -246,20 +246,20 @@ function Write-ManualChecklist {
         }
 
         $lines.Add(
-            "- [$marker] $($check.title): $($check.prompt) (status: $($check.status))")
+            "- [$marker] $($check.title): $($check.prompt) （判定: $($check.status)）")
     }
 
     if ($IncludeViewerScrollReview) {
         $lines.Add("")
-        $lines.Add("## Issue #634 - same-session physical Grid/List wheel observations")
-        $lines.Add("A physical GPU name is diagnostic context, NOT proof of frame-present quality.")
+        $lines.Add("## Issue #634 — 同じ起動中に確認するグリッド・リストのスクロール")
+        $lines.Add("GPU名は参考情報です。実際の表示品質の証明ではありません。")
         foreach ($check in $viewerScrollChecks) {
             $marker = if ($check.status -eq "pass") { "x" } else { " " }
-            $lines.Add("- [$marker] $($check.title): $($check.instruction) (status: $($check.status))")
+            $lines.Add("- [$marker] $($check.title): $($check.instruction) （判定: $($check.status)）")
         }
     }
     $lines.Add("")
-    $lines.Add("If any item fails, keep #634 / #635 and dependent product issues open; do not infer physical acceptance from CI.")
+    $lines.Add("一つでも不合格があれば、該当Issueを未完了として扱います。CIだけで実機合格と判断しません。")
 
     $lines |
         Set-Content -LiteralPath $manualChecklistPath -Encoding UTF8
@@ -269,11 +269,11 @@ function Ask-ScrollPassFailSkip {
     param([Parameter(Mandatory = $true)][string]$Prompt)
 
     while ($true) {
-        $answer = (Read-Host "$Prompt [y/n/s=skip]").Trim().ToLowerInvariant()
+        $answer = (Read-Host "$Prompt [y=問題なし / n=問題あり / s=未確認]").Trim().ToLowerInvariant()
         if ($answer -in @("y", "yes")) { return "pass" }
         if ($answer -in @("n", "no")) { return "fail" }
         if ($answer -in @("s", "skip", "")) { return "pending" }
-        Write-Host "Choose y, n or s."
+        Write-Host "y（問題なし）/ n（問題あり）/ s（未確認）から選んでください。"
     }
 }
 
@@ -285,32 +285,34 @@ function Ask-PassFail {
 
     while ($true) {
         $answer =
-            (Read-Host "$Prompt [y/n]").Trim()
+            (Read-Host "$Prompt [y=問題なし / n=問題あり / s=未確認]").Trim().ToLowerInvariant()
 
-        if ($answer -match '^(y|yes)$') {
+        if ($answer -in @("y", "yes")) {
             return "pass"
         }
-
-        if ($answer -match '^(n|no)$') {
+        if ($answer -in @("n", "no")) {
             return "fail"
         }
+        if ($answer -in @("s", "skip", "")) {
+            return "pending"
+        }
 
-        Write-Host "Please answer y or n."
+        Write-Host "y（問題なし）/ n（問題あり）/ s（未確認）から選んでください。"
     }
 }
 
 if ($InteractiveReview) {
     Write-Host ""
-    Write-Host "=== Lumine manual product review ==="
-    Write-Host "The automated NativeAOT gate passed."
-    Write-Host "Lumine will now open normally using the acceptance data root."
-    Write-Host "Select the representative library already registered in the Library navigation, exercise the checklist, then close Lumine."
+    Write-Host "=== Lumine 実機での操作確認 ==="
+    Write-Host "NativeAOTの自動検証は合格しています。"
+    Write-Host "これからLumineを通常起動します。"
+    Write-Host "ライブラリで登録済みの画像フォルダを選び、操作を確認してからLumineを閉じてください。"
     if ($IncludeViewerScrollReview) {
-        Write-Host "This one app session also covers all five physical Grid/List scroll checks for Issue #634:"
+        Write-Host "この1回の起動で、Issue #634のスクロール5項目も確認してください。"
         foreach ($check in $viewerScrollChecks) {
             Write-Host " - $($check.title): $($check.instruction)"
         }
-        Write-Host "Use the actual Windows display/GPU and representative mixed-format images."
+        Write-Host "実際のWindows画面で、複数形式を含む画像ライブラリを使用してください。"
     }
 
     $startInfo =
@@ -328,14 +330,14 @@ if ($InteractiveReview) {
         [System.Diagnostics.Process]::Start($startInfo)
 
     if ($null -eq $process) {
-        throw "Unable to start Lumine for manual product review."
+        throw "Lumineを起動できませんでした。手動検証は未完了です。"
     }
 
     try {
         $process.WaitForExit()
 
         if ($process.ExitCode -ne 0) {
-            throw "Manual review Lumine process exited with code $($process.ExitCode)."
+            throw "Lumineが異常終了しました（終了コード: $($process.ExitCode)）。"
         }
     }
     finally {
@@ -343,14 +345,14 @@ if ($InteractiveReview) {
     }
 
     Write-Host ""
-    Write-Host "Record the real-user observations:"
+    Write-Host "実際に操作した結果を入力してください。未確認は s を選べます。"
 
     foreach ($check in $manualChecks) {
         $check.status =
             Ask-PassFail -Prompt $check.prompt
     }
     if ($IncludeViewerScrollReview) {
-        Write-Host "Record the five Issue #634 physical scroll observations from the SAME app session:"
+        Write-Host "同じ起動中に確認したスクロール5項目の結果を入力してください。"
         foreach ($check in $viewerScrollChecks) {
             $check.status = Ask-ScrollPassFailSkip -Prompt $check.title
         }
@@ -445,7 +447,7 @@ if ($IncludeViewerScrollReview) {
             ForEach-Object { [string]$_.Name } | Sort-Object -Unique)
     }
     catch {
-        Write-Warning "GPU inventory unavailable; human review status is unchanged."
+        Write-Warning "GPU情報を取得できませんでした。手動評価の結果には影響しません。"
     }
     $viewerReport = [ordered]@{
         schemaVersion = 1
@@ -472,16 +474,16 @@ if ($IncludeViewerScrollReview) {
 }
 
 Write-Host ""
-Write-Host "Product automated acceptance: PASS"
-Write-Host "Manual review            : $manualDecision"
+Write-Host "製品の自動検証: 合格"
+Write-Host "手動操作の確認: $manualDecision"
 if ($IncludeViewerScrollReview) {
-    Write-Host "Viewer physical review  : $viewerScrollManualDecision"
-    Write-Host "Viewer review report    : $viewerScrollReportPath"
+    Write-Host "スクロールの実機確認: $viewerScrollManualDecision"
+    Write-Host "スクロール検証レポート: $viewerScrollReportPath"
 }
-Write-Host "Combined decision        : $combinedDecision"
-Write-Host "Product summary          : $productSummaryPath"
-Write-Host "Manual checklist         : $manualChecklistPath"
+Write-Host "総合判定: $combinedDecision"
+Write-Host "製品検証レポート: $productSummaryPath"
+Write-Host "手動チェックリスト: $manualChecklistPath"
 
 if ($combinedDecision -eq "fail") {
-    throw "Consolidated Lumine product or scroll review reported a failure. Keep #635/#634 open."
+    throw "製品操作またはスクロールの実機確認で不合格がありました。Issue #635/#634は未完了として扱います。"
 }

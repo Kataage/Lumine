@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Exe = (Join-Path $PSScriptRoot '..\artifacts\native-aot\Lumine.App.exe'),
     [string]$OutputDirectory = (Join-Path $PWD 'artifacts\viewer-scroll-owner-review'),
     [string]$DataDirectory = '',
@@ -10,14 +10,14 @@ Set-StrictMode -Version Latest
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
     -not [Environment]::Is64BitOperatingSystem) {
-    throw 'Issue #634 owner review requires Windows x64.'
+    throw 'Issue #634の実機確認には64ビットWindowsが必要です。'
 }
 
 $exePath = (Resolve-Path -LiteralPath $Exe -ErrorAction Stop).Path
 if (-not (Test-Path -LiteralPath $exePath -PathType Leaf) -or
     -not [IO.Path]::GetFileName($exePath).Equals(
         'Lumine.App.exe', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Use Lumine.App.exe from the Windows NativeAOT portable package.'
+    throw 'Windows NativeAOTのポータブル版Lumine.App.exeを指定してください。'
 }
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
@@ -39,12 +39,12 @@ try {
         ForEach-Object { [string]$_.Name } | Sort-Object -Unique)
 }
 catch {
-    Write-Warning 'Video controller inventory unavailable; review can still be completed.'
+    Write-Warning 'GPU情報を取得できませんでした。操作確認は続けられます。'
 }
 
 $sharedChecks = Join-Path $PSScriptRoot 'ViewerScrollReviewChecks.ps1'
 if (-not (Test-Path -LiteralPath $sharedChecks -PathType Leaf)) {
-    throw "Missing shared Viewer scroll checklist: $sharedChecks"
+    throw "スクロール確認用チェックリストが見つかりません: $sharedChecks"
 }
 . $sharedChecks
 $checks = @(New-ViewerScrollReviewChecks)
@@ -80,32 +80,32 @@ function Save-ReviewReport {
         Set-Content -LiteralPath $reportPath -Encoding UTF8
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('# Lumine Viewer scroll owner review - Issue #634')
+    $lines.Add('# Lumine ビューアーの実機スクロール確認 — Issue #634')
     $lines.Add('')
-    $lines.Add("Revision: $revision")
-    $lines.Add("Decision: $($report.manualDecision)")
-    $lines.Add('Headless CI passes are not physical owner acceptance.')
+    $lines.Add("ビルド識別子: $revision")
+    $lines.Add("判定: $($report.manualDecision)")
+    $lines.Add('CIの合格だけでは、実画面での使いやすさを確認したことになりません。')
     $lines.Add('')
     foreach ($item in $checks) {
         $mark = if ($item.status -eq 'pass') { 'x' } else { ' ' }
-        $lines.Add("- [$mark] $($item.title) [status: $($item.status)]")
+        $lines.Add("- [$mark] $($item.title) [判定: $($item.status)]")
         $lines.Add("  $($item.instruction)")
     }
     $lines.Add('')
-    $lines.Add('Send viewer-scroll-owner-report.json or the failing item; do not send private images.')
+    $lines.Add('viewer-scroll-owner-report.jsonまたは不合格の項目を共有してください。画像そのものは不要です。')
     $lines | Set-Content -LiteralPath $checklistPath -Encoding UTF8
 }
 
 Save-ReviewReport
 if ($PrepareOnly) {
-    Write-Host 'PREPARE ONLY: no application launched and no manual pass claimed.'
-    Write-Host "Pending report: $reportPath"
+    Write-Host '準備のみ: Lumineは起動せず、手動検証も合格扱いにしません。'
+    Write-Host "未確認レポート: $reportPath"
     return
 }
 
-Write-Host '=== Lumine physical Windows scroll review - Issue #634 ==='
-Write-Host "Revision: $revision"
-Write-Host 'Use a representative real library. Perform these checks, then close Lumine:'
+Write-Host '=== Lumine スクロールの実機確認 — Issue #634 ==='
+Write-Host "ビルド識別子: $revision"
+Write-Host '実際の画像ライブラリで次の操作を確認し、終わったらLumineを閉じてください。'
 foreach ($item in $checks) { Write-Host " - $($item.title): $($item.instruction)" }
 
 $startInfo = New-Object System.Diagnostics.ProcessStartInfo
@@ -120,7 +120,7 @@ if (-not [string]::IsNullOrWhiteSpace($DataDirectory)) {
 }
 
 $process = [System.Diagnostics.Process]::Start($startInfo)
-if ($null -eq $process) { throw 'Lumine failed to launch; review remains pending.' }
+if ($null -eq $process) { throw 'Lumineを起動できませんでした。実機確認は未完了です。' }
 try {
     $process.WaitForExit()
     $report.appExitCode = $process.ExitCode
@@ -129,17 +129,17 @@ finally { $process.Dispose() }
 if ($report.appExitCode -ne 0) {
     $report.manualDecision = 'fail'
     Save-ReviewReport
-    throw "Lumine exited with $($report.appExitCode); review did not pass."
+    throw "Lumineが異常終了しました（終了コード: $($report.appExitCode)）。実機確認は不合格です。"
 }
 
 function Ask-ReviewStatus {
     param([string]$Question)
     while ($true) {
-        $answer = (Read-Host "$Question [y/n/s=skip]").Trim().ToLowerInvariant()
+        $answer = (Read-Host "$Question [y=問題なし / n=問題あり / s=未確認]").Trim().ToLowerInvariant()
         if ($answer -in @('y', 'yes')) { return 'pass' }
         if ($answer -in @('n', 'no')) { return 'fail' }
         if ($answer -in @('s', 'skip', '')) { return 'pending' }
-        Write-Host 'Choose y, n or s.'
+        Write-Host 'y（問題なし）/ n（問題あり）/ s（未確認）から選んでください。'
     }
 }
 
@@ -159,6 +159,6 @@ else {
     $report.manualDecision = 'owner-reported-pass'
 }
 Save-ReviewReport
-Write-Host "Viewer scroll review: $($report.manualDecision)"
-Write-Host "Report: $reportPath"
-Write-Host "Checklist: $checklistPath"
+Write-Host "スクロールの実機確認: $($report.manualDecision)"
+Write-Host "結果レポート: $reportPath"
+Write-Host "確認項目一覧: $checklistPath"
