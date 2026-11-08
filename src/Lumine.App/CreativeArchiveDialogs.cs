@@ -760,7 +760,37 @@ internal static class CreativeArchiveDialogs
         IReadOnlyList<CreativePublicationAssetOption> publicationAssets,
         IReadOnlyList<WorkInfo> works,
         IReadOnlyList<PublicationDestinationInfo>? destinations = null,
-        IReadOnlyList<PublicationAccountInfo>? accounts = null)
+        IReadOnlyList<PublicationAccountInfo>? accounts = null,
+        Func<string, string, Task<PublicationDestinationInfo?>>?
+            registerDestination = null,
+        Func<long, string, string, Task<PublicationAccountInfo?>>?
+            registerAccount = null) =>
+        ShowWithFocusReturnAsync<CreativePublicationDialogResult>(
+            owner,
+            CreatePublicationDialogForSmoke(
+                owner,
+                selection,
+                publicationAssets,
+                works,
+                destinations,
+                accounts,
+                registerDestination,
+                registerAccount));
+
+    // Production dialog construction is also mounted by the App smoke.
+    // The test invokes actual Save-account button and then reopens the same
+    // production form with persisted repository records.
+    internal static Window CreatePublicationDialogForSmoke(
+        Window owner,
+        CreativeSelectionPreview selection,
+        IReadOnlyList<CreativePublicationAssetOption> publicationAssets,
+        IReadOnlyList<WorkInfo> works,
+        IReadOnlyList<PublicationDestinationInfo>? destinations = null,
+        IReadOnlyList<PublicationAccountInfo>? accounts = null,
+        Func<string, string, Task<PublicationDestinationInfo?>>?
+            registerDestination = null,
+        Func<long, string, string, Task<PublicationAccountInfo?>>?
+            registerAccount = null)
     {
         ArgumentNullException.ThrowIfNull(publicationAssets);
         if (publicationAssets.Count != selection.Count)
@@ -776,7 +806,8 @@ internal static class CreativeArchiveDialogs
             Array.Empty<PublicationAccountInfo>();
 
         var destinationProfiles =
-            destinations.ToArray();
+            destinations.ToList();
+        var registeredAccounts = accounts.ToList();
         var destination =
             new ComboBox
             {
@@ -790,7 +821,7 @@ internal static class CreativeArchiveDialogs
                         .ToArray(),
                 SelectedIndex = 0
             };
-        if (destinationProfiles.Length == 0)
+        if (destinationProfiles.Count == 0)
         {
             destination.SelectedIndex = 0;
         }
@@ -801,7 +832,7 @@ internal static class CreativeArchiveDialogs
                 PlaceholderText =
                     "公開先名（例: 個人サイト）",
                 IsVisible =
-                    destinationProfiles.Length == 0
+                    destinationProfiles.Count == 0
             };
         var work =
             new ComboBox
@@ -819,8 +850,31 @@ internal static class CreativeArchiveDialogs
             new TextBox
             {
                 PlaceholderText =
-                    "アカウント名 / ID"
+                    "アカウント名または公開ID"
             };
+        AutomationProperties.SetName(
+            destination,
+            "公開先を選択");
+        AutomationProperties.SetName(
+            customDestination,
+            "新しい公開先名を入力");
+        AutomationProperties.SetName(
+            account,
+            "登録済みアカウントを選択");
+        AutomationProperties.SetName(
+            customAccount,
+            "新しいアカウント名を入力");
+        var accountRegistrationStatus = CreateStatus();
+        var saveAccount =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "このアカウントを保存",
+                    IsVisible = registerAccount is not null
+                });
+        AutomationProperties.SetName(
+            saveAccount,
+            "公開アカウントを登録して次回から再利用");
         var title = new TextBox
         {
             PlaceholderText = "タイトル"
@@ -871,7 +925,7 @@ internal static class CreativeArchiveDialogs
         PublicationDestinationInfo? SelectedDestinationProfile() =>
             destination.SelectedIndex >= 0
             && destination.SelectedIndex
-                < destinationProfiles.Length
+                < destinationProfiles.Count
                 ? destinationProfiles[
                     destination.SelectedIndex]
                 : null;
@@ -885,7 +939,7 @@ internal static class CreativeArchiveDialogs
             selectedAccounts =
                 profile is null
                     ? []
-                    : accounts
+                    : registeredAccounts
                         .Where(
                             item =>
                                 item.DestinationId
@@ -910,7 +964,7 @@ internal static class CreativeArchiveDialogs
                                     ? item.DisplayName
                                     : $"{item.DisplayName} · {item.AccountIdentifier}"))
                     .Append(
-                        "一時入力（保存しない）")
+                        "別のアカウントを入力")
                     .ToArray();
             account.SelectedIndex =
                 selectedAccounts.Length > 0
@@ -918,10 +972,19 @@ internal static class CreativeArchiveDialogs
                     : selectedAccounts.Length + 1;
             account.IsVisible =
                 profile is not null;
-            customAccount.IsVisible =
-                profile is null
+            UpdateNewAccountVisibility();
+        }
+
+        void UpdateNewAccountVisibility()
+        {
+            var needsAccountInput =
+                SelectedDestinationProfile() is null
                 || account.SelectedIndex
                     == selectedAccounts.Length + 1;
+            customAccount.IsVisible = needsAccountInput;
+            saveAccount.IsVisible =
+                needsAccountInput
+                && registerAccount is not null;
         }
 
         void RenderDestination()
@@ -978,14 +1041,128 @@ internal static class CreativeArchiveDialogs
         destination.SelectionChanged +=
             (_, _) => RenderDestination();
         account.SelectionChanged +=
-            (_, _) =>
+            (_, _) => UpdateNewAccountVisibility();
+        var accountSaving = false;
+        saveAccount.Click += async (_, _) =>
+        {
+            if (accountSaving || registerAccount is null)
             {
-                customAccount.IsVisible =
-                    SelectedDestinationProfile()
-                        is null
-                    || account.SelectedIndex
-                        == selectedAccounts.Length + 1;
-            };
+                return;
+            }
+
+            var name = customAccount.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                accountRegistrationStatus.Text =
+                    "アカウント名または公開IDを入力してください。";
+                return;
+            }
+
+            accountSaving = true;
+            saveAccount.IsEnabled = false;
+            accountRegistrationStatus.Text = "保存中…";
+            try
+            {
+                var profile = SelectedDestinationProfile();
+                if (profile is null)
+                {
+                    var destinationName =
+                        customDestination.Text?.Trim()
+                        ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(destinationName))
+                    {
+                        accountRegistrationStatus.Text =
+                            "公開先名を入力してください。";
+                        return;
+                    }
+
+                    if (registerDestination is null)
+                    {
+                        accountRegistrationStatus.Text =
+                            "公開先を登録できません。";
+                        return;
+                    }
+
+                    var kind =
+                        destinationName.Equals(
+                            "Pixiv",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "pixiv"
+                            : destinationName.Equals(
+                                "X",
+                                StringComparison.OrdinalIgnoreCase)
+                              || destinationName.Equals(
+                                  "Twitter",
+                                  StringComparison.OrdinalIgnoreCase)
+                                ? "twitter"
+                                : destinationName.Equals(
+                                    "Misskey",
+                                    StringComparison.OrdinalIgnoreCase)
+                                    ? "misskey"
+                                    : destinationName.Equals(
+                                        "Bluesky",
+                                        StringComparison.OrdinalIgnoreCase)
+                                        ? "bluesky"
+                                        : "other";
+                    profile =
+                        await registerDestination(
+                            destinationName,
+                            kind);
+                    if (profile is null)
+                    {
+                        accountRegistrationStatus.Text =
+                            "公開先を保存できませんでした。";
+                        return;
+                    }
+
+                    destinationProfiles.Add(profile);
+                    destination.ItemsSource =
+                        destinationProfiles
+                            .Select(static item => item.Name)
+                            .Append("一時入力（保存しない）")
+                            .ToArray();
+                    destination.SelectedIndex =
+                        destinationProfiles.Count - 1;
+                    customDestination.Text = string.Empty;
+                    RenderDestination();
+                }
+
+                var saved =
+                    await registerAccount(
+                        profile.Id,
+                        name,
+                        string.Empty);
+                if (saved is null)
+                {
+                    accountRegistrationStatus.Text =
+                        "アカウントを保存できませんでした。";
+                    return;
+                }
+
+                registeredAccounts.Add(saved);
+                RenderAccountChoices();
+                account.SelectedIndex =
+                    Array.FindIndex(
+                        selectedAccounts,
+                        item => item.Id == saved.Id) + 1;
+                customAccount.Text = string.Empty;
+                UpdateNewAccountVisibility();
+                accountRegistrationStatus.Text =
+                    "アカウントを保存しました。";
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Trace.TraceError(
+                    exception.ToString());
+                accountRegistrationStatus.Text =
+                    "アカウントを保存できませんでした。";
+            }
+            finally
+            {
+                accountSaving = false;
+                saveAccount.IsEnabled = true;
+            }
+        };
         RenderDestination();
 
         var dialog = CreateDialog(
@@ -1005,8 +1182,10 @@ internal static class CreativeArchiveDialogs
         AddField(stack, "アカウント", account);
         AddField(
             stack,
-            "一時アカウント",
+            "新しいアカウント名",
             customAccount);
+        stack.Children.Add(saveAccount);
+        stack.Children.Add(accountRegistrationStatus);
         AddField(stack, "タイトル", title);
         AddField(stack, "本文", body);
         AddField(stack, "タグ", tags);
@@ -1146,7 +1325,7 @@ internal static class CreativeArchiveDialogs
                         orderEditor.OrderedAssetIds);
                 }));
         dialog.Content = CreateDialogForm(stack);
-        return ShowWithFocusReturnAsync<CreativePublicationDialogResult>(owner, dialog);
+        return dialog;
     }
 
     // All creative-archive modal entry points use the same focus-return

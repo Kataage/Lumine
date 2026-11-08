@@ -3430,7 +3430,24 @@ internal sealed class CoreViewerShell : UserControl
                     publicationAssets,
                     works,
                     destinations,
-                    accounts);
+                    accounts,
+                    registerDestination:
+                        async (name, kind) =>
+                            await _runtime.LibraryService
+                                .CreatePublicationDestinationAsync(
+                                    _runtime.Library.Id,
+                                    new PublicationDestinationCreate(
+                                        name,
+                                        kind)),
+                    registerAccount:
+                        async (destinationId, name, identifier) =>
+                            await _runtime.LibraryService
+                                .CreatePublicationAccountAsync(
+                                    _runtime.Library.Id,
+                                    new PublicationAccountCreate(
+                                        destinationId,
+                                        name,
+                                        identifier)));
         if (input is not null)
         {
             await CreatePublicationFromSelectionAsync(
