@@ -594,8 +594,10 @@ function Write-CrashDiagnostics {
         $lines.Add("windowsApplicationEvent=not-found")
     }
 
+    # AppDataPaths.FromRoot always writes to <dataRoot>/logs/runtime.log.
+    # Keep this in sync so native access violations preserve stage breadcrumbs.
     $runtimeLog =
-        Join-Path $dataRoot "runtime.log"
+        Join-Path (Join-Path $dataRoot "logs") "runtime.log"
     if (Test-Path -LiteralPath $runtimeLog) {
         $lines.Add("--- Lumine runtime.log ---")
         $lines.Add(
