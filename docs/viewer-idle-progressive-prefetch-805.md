@@ -9,12 +9,12 @@ The user requested preparing images ahead of scrolling, while an abrupt jump sho
 ## v2 implementation stage 1: bounded idle expansion
 
 - The existing visible viewport (foreground) and directional near-lookahead (background) remain unchanged.
-- After the existing source lookahead completes, a normal (non-far-seek) viewport may spend idle time preparing additional decoded bitmaps *without waiting for a scroll event*.
+- After the existing source lookahead completes, the current viewport may spend idle time preparing additional decoded bitmaps *without waiting for a scroll event*. This includes a far seek **after** its foreground target is ready; intermediate destinations are never prefetched.
 - Admission is deferred by 300ms to give normal interaction an opportunity to supersede stale work. The existing coalesced lookahead cancellation token cancels the work on changed viewport or rebind; its 5-second timeout remains intact.
 - `ResolveIdleProgressiveRowsForSmoke` computes additional rows from **both** free decoded-bitmap cache entries and free decoded byte budget, reserving at least one visible viewport's worth. Each batch reevaluates foreground readiness and remaining space.
 - Source and decoded bitmap work uses existing background-priority `PredecodeNextRowAsync` and capped worker concurrency. The next likely row is promoted as MRU after idle expansion.
-- Maximum additional work from one schedule is bounded to twice the visible row count (and 96 rows overall); this is an **allocation/work guard**, not an asset count/page limit.
-- Disabled prefetch (`PrefetchRows < 2`) and far-seek quiet periods do not trigger idle expansion.
+- The original two-viewport ceiling is **not** a total limit. Idle work advances in two-row batches, re-evaluating decoded cache headroom and foreground readiness between rows, and yielding 25ms between batches. It stops at the dataset edge, resource exhaustion, viewport change, or the inherited five-second lookahead cancellation deadline. These are runtime/resource safeguards, **not** user-visible pages.
+- Disabled prefetch (`PrefetchRows < 2`) does not trigger idle expansion. Far seeks first prioritize rendering the new foreground target; only afterward can the idle preparation resume from that new viewport.
 
 ## Why not precompute the entire library in MemoryOnly mode?
 
@@ -24,7 +24,7 @@ Persistent background thumbnail generation for all assets would be a separate, e
 
 ## Acceptance and outstanding verification
 
-Current branch contains code and deterministic budget tests; full Windows CI, NativeAOT, real-library cold/warm timing, 10s idle zero-inflight, and physical review are not yet established. Do not claim a performance win or close #805/#634 before those checks.
+Stage 2 also adds mounted Viewer tests that require idle preparation to cross the old two-viewport ceiling and resume after a far jump at its destination. Full Windows CI, NativeAOT, real-library cold/warm timing, 10s idle zero-inflight, and physical review of this stage are not yet established. Do not claim a performance win or close #805/#634 before those checks.
 
 Confirm that changing the visible row, direction, filter, dataset, or closing the viewer cancels obsolete idle work, and the new viewport remains higher priority. Compare actual visible paint timing and background worker counts against develop.
 
