@@ -1369,9 +1369,11 @@ internal static class Program
             && ThumbnailViewerControl.ResolveIdleProgressiveRowsForSmoke(
                 visibleRows: 5,
                 columns: 7,
-                idleOptions with
+                new ViewerOptions
                 {
-                    DecodedBitmapByteLimit = 16L * 1024 * 1024
+                    DecodedBitmapEntryLimit = 128,
+                    DecodedBitmapByteLimit = 16L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
                 },
                 idlePartial) == 0
             && ThumbnailViewerControl.ResolveIdleProgressiveRowsForSmoke(
