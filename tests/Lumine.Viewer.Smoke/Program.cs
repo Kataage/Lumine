@@ -2005,12 +2005,13 @@ internal static class Program
 
             var initialForeground = provider.ForegroundRequests;
             var initialBackground = provider.BackgroundRequests;
+            var initialInteractive = provider.InteractiveRequests;
             const long targetIndex = 800;
             viewer.ScrollToAsset(targetIndex);
 
             for (var attempt = 0;
                  attempt < 1_000
-                 && !provider.HasForegroundRequestFor(targetIndex + 1);
+                 && !provider.HasInteractiveRequestFor(targetIndex + 1);
                  attempt++)
             {
                 Dispatcher.UIThread.RunJobs();
@@ -2019,9 +2020,14 @@ internal static class Program
 
             Require(
                 provider.ForegroundRequests > initialForeground
-                && provider.HasForegroundRequestFor(targetIndex + 1)
+                && provider.HasInteractiveRequestFor(targetIndex + 1)
+                && provider.InteractiveRequests == initialInteractive + 1
+                && viewer.GetTilePriorityForSmoke(targetIndex)
+                    == ViewerThumbnailPriority.Interactive
+                && viewer.GetTilePriorityForSmoke(targetIndex + 1)
+                    == ViewerThumbnailPriority.Foreground
                 && !viewer.IsAssetReady(targetIndex),
-                "Far seek did not request the actual target tile as foreground before testing speculative requests.");
+                "Far seek did not promote only the exact target tile to Interactive priority before background speculation.");
 
             // Give the far-seek scheduler far more than its 48/96ms
             // debounce, proving it cannot admit backgrounds just because
@@ -4531,11 +4537,20 @@ internal sealed class GatedPriorityThumbnailProvider(
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _foregroundRequests;
     private int _backgroundRequests;
+    private int _interactiveRequests;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte>
         _foregroundAssetIds = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte>
+        _interactiveAssetIds = new();
 
     public bool HasForegroundRequestFor(long assetId) =>
         _foregroundAssetIds.ContainsKey(assetId);
+
+    public bool HasInteractiveRequestFor(long assetId) =>
+        _interactiveAssetIds.ContainsKey(assetId);
+
+    public int InteractiveRequests =>
+        Volatile.Read(ref _interactiveRequests);
 
     public int ForegroundRequests =>
         Volatile.Read(ref _foregroundRequests);
@@ -4553,18 +4568,26 @@ internal sealed class GatedPriorityThumbnailProvider(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (priority == ViewerThumbnailPriority.Foreground)
+        if (priority is ViewerThumbnailPriority.Foreground
+            or ViewerThumbnailPriority.Interactive)
         {
-            _foregroundAssetIds.TryAdd(asset.Id, 0);
-            Interlocked.Increment(
-                ref _foregroundRequests);
+            if (priority == ViewerThumbnailPriority.Interactive)
+            {
+                _interactiveAssetIds.TryAdd(asset.Id, 0);
+                Interlocked.Increment(ref _interactiveRequests);
+            }
+            else
+            {
+                _foregroundAssetIds.TryAdd(asset.Id, 0);
+                Interlocked.Increment(ref _foregroundRequests);
+            }
+
             await _foregroundRelease.Task
                 .WaitAsync(cancellationToken);
         }
         else
         {
-            Interlocked.Increment(
-                ref _backgroundRequests);
+            Interlocked.Increment(ref _backgroundRequests);
         }
 
         return new ViewerThumbnail(
