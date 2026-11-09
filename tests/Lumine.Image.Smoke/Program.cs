@@ -104,6 +104,19 @@ static void VerifyThumbnailPriorityScheduler()
             interactive: 1, foreground: 32, background: 32,
             foregroundBurst: 0) == ThumbnailPriority.Interactive,
         "Small-worker shared fallback lost Interactive priority.");
+    // #634 second owner failure: the reserved worker must be able to
+    // borrow a general queue item after a quiet period and later give
+    // way to Interactive; the borrowed item retains its own priority.
+    Require(
+        Route(route, interactiveOnly: false, reserved: true,
+            interactive: 0, foreground: 6, background: 1,
+            foregroundBurst: 0) == ThumbnailPriority.Foreground,
+        "Idle reserved worker cannot help six pending Foreground tiles.");
+    Require(
+        Route(route, interactiveOnly: false, reserved: true,
+            interactive: 0, foreground: 0, background: 1,
+            foregroundBurst: 0) == ThumbnailPriority.Background,
+        "Idle reserved worker cannot drain the bounded Background queue.");
 }
 
 static void VerifyUnreadableOrientationIsUnsafe()
@@ -1110,6 +1123,9 @@ try
             (imagePolicy.ThumbnailWorkerCount >= 4 ? 1 : 0)
         && pipeline.WorkerCount <= CoreResourcePolicy.MaxThumbnailWorkerCount,
         "Native Interactive reservation used an extra worker or did not preserve the configured resource cap.");
+    Require(
+        pipeline.SnapshotActiveWork().Count == 0,
+        "Native source-work snapshot was non-empty before the Image smoke.");
     Require(
         pipeline.QueueCapacity == imagePolicy.ThumbnailQueueCapacity,
         "Queue bound was not mapped from the Core policy.");
@@ -2269,6 +2285,9 @@ try
                 == opensBeforeMemoryHit,
             "Memory-only Interactive cache hit reopened the source instead of completing before queue admission.");
 
+        Require(
+            memoryPipeline.SnapshotActiveWork().Count == 0,
+            "Completed MemoryOnly requests left native active-work entries.");
         var memoryStats =
             memoryPipeline.MemoryCacheStats;
         Require(
