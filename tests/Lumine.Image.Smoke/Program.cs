@@ -2285,6 +2285,16 @@ try
                 == opensBeforeMemoryHit,
             "Memory-only Interactive cache hit reopened the source instead of completing before queue admission.");
 
+        // Completion is published before the worker's finally block
+        // clears active diagnostics. Wait for that cleanup rather than
+        // racing a legitimate asynchronous continuation.
+        for (var attempt = 0;
+             attempt < 50 && memoryPipeline.SnapshotActiveWork().Count > 0;
+             attempt++)
+        {
+            await Task.Delay(10);
+        }
+
         Require(
             memoryPipeline.SnapshotActiveWork().Count == 0,
             "Completed MemoryOnly requests left native active-work entries.");
