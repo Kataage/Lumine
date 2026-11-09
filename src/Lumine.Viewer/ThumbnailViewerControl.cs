@@ -1594,6 +1594,12 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
+        // #634: changing Grid density rebinds every virtual row, not just
+        // its visual size. Stop work planned for the OLD row geometry
+        // before detaching those tiles, otherwise stale speculative reads
+        // compete with the newly visible density's Foreground requests.
+        // Keep the existing decoded-bitmap/warm presentation caches intact.
+        CancelLookahead();
         _lastFarProgrammaticSeekTimestamp = 0;
         Volatile.Write(ref _pendingFarProgrammaticTargetIndex, -1);
         _consecutiveFarProgrammaticSeeks = 0;
