@@ -3171,12 +3171,70 @@ public sealed class MainWindow : Window
     private async Task OnBrowsePreferencesChangedAsync(
         BrowsePreferences preferences)
     {
+        var previousPreferences = _browsePreferences;
         _browsePreferences =
             preferences
             ?? throw new ArgumentNullException(nameof(preferences));
 
-        _shell?.SetBrowseLayout(
-            _browsePreferences);
+        // #634: the owner reported a subjective slowdown after
+        // changing Grid density 0 -> 1. Record only aggregate readiness
+        // and synchronous UI rebuild time, never image names/paths.
+        // This has no effect on first-library-open or thumbnail quality.
+        var layoutChanged =
+            previousPreferences.ViewMode != _browsePreferences.ViewMode
+            || previousPreferences.Density != _browsePreferences.Density;
+        if (layoutChanged && _shell is { } layoutShell)
+        {
+            var viewer = layoutShell.GridViewer;
+            var beforeState = viewer.Diagnostics;
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            layoutShell.SetBrowseLayout(_browsePreferences);
+            var synchronousMs = System.Diagnostics.Stopwatch
+                .GetElapsedTime(started).TotalMilliseconds;
+            var afterState = viewer.Diagnostics;
+            _host?.Log.Write(
+                "viewer-layout",
+                $"phase=sync,view={previousPreferences.ViewMode}->{_browsePreferences.ViewMode},"
+                + $"density={previousPreferences.Density}->{_browsePreferences.Density},"
+                + $"sync_ms={synchronousMs:F1},"
+                + $"ready_before={beforeState.ReadyTiles},ready_after={afterState.ReadyTiles},"
+                + $"attached_before={beforeState.AttachedTiles},"
+                + $"attached_after={afterState.AttachedTiles},"
+                + $"source_requests_delta={afterState.ThumbnailRequests - beforeState.ThumbnailRequests}");
+
+            // One UI-queue check is enough to identify an unexpected
+            // rebind with blank visible tiles. It does not block input,
+            // start a timer, initiate any thumbnail work or change the
+            // image pipeline's scheduling and first-load benchmark.
+            var expectedView = _browsePreferences.ViewMode;
+            var expectedDensity = _browsePreferences.Density;
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (!ReferenceEquals(_shell, layoutShell)
+                        || _browsePreferences.ViewMode != expectedView
+                        || _browsePreferences.Density != expectedDensity)
+                    {
+                        return;
+                    }
+
+                    var current = viewer.Diagnostics;
+                    var visible = viewer.ViewportReadiness;
+                    _host?.Log.Write(
+                        "viewer-layout",
+                        $"phase=ui-post,view={expectedView},density={expectedDensity},"
+                        + $"elapsed_ms={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F1},"
+                        + $"visible_tiles={visible.VisibleTiles},unready_tiles={visible.UnreadyTiles},"
+                        + $"ready_tiles={current.ReadyTiles},"
+                        + $"source_requests_delta={current.ThumbnailRequests - beforeState.ThumbnailRequests},"
+                        + $"source_cancel_delta={current.ThumbnailRequestsCancelled - beforeState.ThumbnailRequestsCancelled}");
+                },
+                Avalonia.Threading.DispatcherPriority.Loaded);
+        }
+        else
+        {
+            _shell?.SetBrowseLayout(_browsePreferences);
+        }
 
         if (_host is not null)
         {
