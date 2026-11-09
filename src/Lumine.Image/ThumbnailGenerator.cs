@@ -198,6 +198,7 @@ internal sealed class ThumbnailGenerator
         CancellationToken cancellationToken,
         ThumbnailGenerationPhaseProbe? phaseProbe)
     {
+        phaseProbe?.SetPhase(ThumbnailWorkPhase.KeyGate);
         var keyGate = AcquireKeyGate(cacheKey);
         try
         {
@@ -269,6 +270,7 @@ internal sealed class ThumbnailGenerator
         CancellationToken cancellationToken,
         ThumbnailGenerationPhaseProbe? phaseProbe)
     {
+        phaseProbe?.SetPhase(ThumbnailWorkPhase.SourceMetadata);
         Interlocked.Increment(ref _metadataProbes);
         var metadataStarted = Stopwatch.GetTimestamp();
         var snapshot = ImageSourceSnapshot.Open(
@@ -338,6 +340,7 @@ internal sealed class ThumbnailGenerator
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _sourceOpens);
             sourceOpened = true;
+            phaseProbe?.SetPhase(ThumbnailWorkPhase.NativeSetup);
             var nativeSetupStarted = Stopwatch.GetTimestamp();
 
             if (snapshot.BmpInfo is { } bmp)
@@ -394,6 +397,7 @@ internal sealed class ThumbnailGenerator
                 byte[] encoded;
                 try
                 {
+                    phaseProbe?.SetPhase(ThumbnailWorkPhase.NativeEvaluation);
                     var renderStarted = Stopwatch.GetTimestamp();
                     encoded = thumbnail.WebpsaveBuffer(
                         q: profile.Quality,
@@ -440,6 +444,7 @@ internal sealed class ThumbnailGenerator
 
             try
             {
+                phaseProbe?.SetPhase(ThumbnailWorkPhase.NativeEvaluation);
                 var renderStarted = Stopwatch.GetTimestamp();
                 thumbnail.Webpsave(
                     temporaryPath,
@@ -768,10 +773,30 @@ internal sealed class ThumbnailGenerator
     }
 }
 
-// Mutable only within the owning synchronous ThumbnailPipeline worker call.
-// Never stores paths, filenames or image bytes.
+// Current stage is sampled from another thread at idle. Do not attach
+// filenames or image bytes to these diagnostics.
+public enum ThumbnailWorkPhase
+{
+    Pending = 0,
+    SourceMetadata = 1,
+    KeyGate = 2,
+    NativeSetup = 3,
+    NativeEvaluation = 4,
+    Completed = 5
+}
+
+// Mutable numeric times on the owning worker; atomic current phase may be
+// observed concurrently by acceptance without inspecting native state.
 internal sealed class ThumbnailGenerationPhaseProbe
 {
+    private int _phase;
+
+    public ThumbnailWorkPhase Phase =>
+        (ThumbnailWorkPhase)Volatile.Read(ref _phase);
+
+    public void SetPhase(ThumbnailWorkPhase phase) =>
+        Volatile.Write(ref _phase, (int)phase);
+
     public double SourceMetadataMilliseconds { get; set; }
     public double SourceKeyWaitMilliseconds { get; set; }
     public double NativeSetupMilliseconds { get; set; }
