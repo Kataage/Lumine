@@ -375,88 +375,135 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         }
     }
 
-    private async Task WorkerLoopAsync(bool interactiveOnly)
+    private async Task WorkerLoopAsync(
+        int workerIndex,
+        bool interactiveOnly)
     {
         var foregroundBurst = 0;
 
         while (true)
         {
-            var queuedItems = interactiveOnly
-                ? _interactiveQueuedItems
-                : _queuedItems;
-            await queuedItems.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+            var borrowed = false;
+            if (interactiveOnly)
+            {
+                // #634: the reserved lane must not stay idle for >10s
+                // while three Foreground workers are saturated. It may
+                // borrow a queued generic request during Interactive
+                // quiet time; a new target preempts that native attempt.
+                var gotInteractive = await _interactiveQueuedItems.WaitAsync(
+                    InteractiveBorrowProbe,
+                    _shutdown.Token).ConfigureAwait(false);
+                if (!gotInteractive)
+                {
+                    if (!_queuedItems.Wait(0))
+                    {
+                        continue;
+                    }
 
-            WorkItem? item;
+                    borrowed = true;
+                }
+            }
+            else
+            {
+                await _queuedItems.WaitAsync(
+                    _shutdown.Token).ConfigureAwait(false);
+            }
+
+            WorkItem item;
+            CancellationTokenSource? loanCancellation = null;
+            var phaseProbe = new ThumbnailGenerationPhaseProbe();
+
             lock (_queueGate)
             {
-                var nextPriority =
-                    SelectNextPriorityForWorker(
-                        interactiveOnly,
-                        ReservedInteractiveWorkers > 0,
-                        _interactive.Count,
-                        _foreground.Count,
-                        _background.Count,
-                        foregroundBurst,
-                        MaxForegroundBurst);
+                if (borrowed && _interactive.Count > 0)
+                {
+                    // An Interactive request raced with borrowing.
+                    // Restore the general queue's semaphore permit.
+                    _queuedItems.Release();
+                    continue;
+                }
+
+                var nextPriority = SelectNextPriorityForWorker(
+                    interactiveOnly && !borrowed,
+                    ReservedInteractiveWorkers > 0,
+                    _interactive.Count,
+                    _foreground.Count,
+                    _background.Count,
+                    foregroundBurst,
+                    MaxForegroundBurst);
 
                 switch (nextPriority)
                 {
                     case ThumbnailPriority.Interactive:
                         item = _interactive.Dequeue();
                         break;
-
                     case ThumbnailPriority.Foreground:
                         item = _foreground.Dequeue();
                         foregroundBurst++;
                         break;
-
                     case ThumbnailPriority.Background:
                         item = _background.Dequeue();
                         foregroundBurst = 0;
                         break;
-
                     case null:
                         continue;
-
                     default:
                         throw new InvalidOperationException(
                             $"Unknown thumbnail queue priority: {nextPriority}.");
                 }
 
+                if (borrowed)
+                {
+                    loanCancellation = new CancellationTokenSource();
+                    _interactiveLoanCancellation = loanCancellation;
+                }
+
                 _activeWorkItems++;
+                _activeByWorker.Add(
+                    workerIndex,
+                    new ActiveWorkState(
+                        item,
+                        Stopwatch.GetTimestamp(),
+                        phaseProbe,
+                        borrowed));
             }
 
-            ReleaseAdmissionSlot(
-                item.Priority);
+            // A borrowed work item retains its existing queue capacity
+            // permit while active, so a preemption can requeue that same
+            // item without growing the configured bounded queue.
+            if (!borrowed)
+            {
+                ReleaseAdmissionSlot(item.Priority);
+            }
 
             var workerQueueMilliseconds =
                 Stopwatch.GetElapsedTime(
                     item.QueuedAtTimestamp).TotalMilliseconds;
             ThumbnailResult? result = null;
+            var requeued = false;
 
             try
             {
                 if (item.CancellationToken.IsCancellationRequested)
                 {
-                    item.Completion.TrySetCanceled(
-                        item.CancellationToken);
+                    item.Completion.TrySetCanceled(item.CancellationToken);
                     continue;
                 }
 
-                using var activeCancellation =
-                    CancellationTokenSource.CreateLinkedTokenSource(
+                using var activeCancellation = loanCancellation is null
+                    ? CancellationTokenSource.CreateLinkedTokenSource(
                         item.CancellationToken,
-                        _shutdown.Token);
+                        _shutdown.Token)
+                    : CancellationTokenSource.CreateLinkedTokenSource(
+                        item.CancellationToken,
+                        _shutdown.Token,
+                        loanCancellation.Token);
 
-                var phaseProbe = new ThumbnailGenerationPhaseProbe();
                 result = _generator.GetOrCreate(
                     item.Source,
                     item.Profile,
                     activeCancellation.Token,
                     phaseProbe);
-                // A second request may find the same cache key after a
-                // worker starts. Never attribute fictitious native decode
-                // costs to that cache hit.
                 if (!result.CacheHit)
                 {
                     result = result with
@@ -471,7 +518,48 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                     };
                 }
 
+                phaseProbe.SetPhase(ThumbnailWorkPhase.Completed);
                 item.Completion.TrySetResult(result);
+            }
+            catch (OperationCanceledException)
+                when (borrowed
+                    && loanCancellation?.IsCancellationRequested == true
+                    && !item.CancellationToken.IsCancellationRequested
+                    && !_shutdown.IsCancellationRequested)
+            {
+                // This is only an INTERNAL loan preemption, not caller
+                // cancellation. Preserve the existing completion task,
+                // source identity, priority and bounded queue permit.
+                lock (_queueGate)
+                {
+                    if (!_disposed)
+                    {
+                        var pending = item with
+                        {
+                            QueuedAtTimestamp = Stopwatch.GetTimestamp()
+                        };
+                        if (item.Priority == ThumbnailPriority.Foreground)
+                        {
+                            _foreground.Enqueue(pending);
+                        }
+                        else
+                        {
+                            _background.Enqueue(pending);
+                        }
+
+                        requeued = true;
+                    }
+                }
+
+                if (requeued)
+                {
+                    _queuedItems.Release();
+                }
+                else
+                {
+                    item.Completion.TrySetException(
+                        new ObjectDisposedException(nameof(ThumbnailPipeline)));
+                }
             }
             catch (OperationCanceledException)
                 when (item.CancellationToken.IsCancellationRequested)
@@ -493,8 +581,22 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 lock (_queueGate)
                 {
                     _activeWorkItems--;
+                    _activeByWorker.Remove(workerIndex);
+                    if (loanCancellation is not null
+                        && ReferenceEquals(
+                            _interactiveLoanCancellation,
+                            loanCancellation))
+                    {
+                        _interactiveLoanCancellation = null;
+                    }
                 }
 
+                if (borrowed && !requeued)
+                {
+                    ReleaseAdmissionSlot(item.Priority);
+                }
+
+                loanCancellation?.Dispose();
                 _maintenance?.NotifyRequestCompleted(
                     result,
                     IsIdleForMaintenance);
