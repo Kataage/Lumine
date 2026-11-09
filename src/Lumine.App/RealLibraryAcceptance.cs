@@ -568,6 +568,17 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["thumbnail.reserved_interactive_workers"] =
             runtime.ReservedInteractiveThumbnailWorkers.ToString(
                 CultureInfo.InvariantCulture);
+        var activeWork = runtime.SnapshotActiveThumbnailWork();
+        _metadata["thumbnail.active_work_detail_count"] =
+            activeWork.Count.ToString(CultureInfo.InvariantCulture);
+        _metadata["thumbnail.active_work_details"] = string.Join(
+            ";",
+            activeWork.Take(8).Select(static work =>
+                $"asset={work.AssetId},priority={work.Priority},"
+                + $"phase={work.Phase},borrowed={work.BorrowedInteractiveWorker},"
+                + $"cancelled={work.CancellationRequested},"
+                + $"age_ms={work.AgeMilliseconds:F1},"
+                + $"source_mib={work.SourceMiB:F2}"));
         WriteBackgroundTechnicalMetadata(
             ViewerTechnicalMetadataBatcher.For(
                 runtime.LibraryService).Diagnostics);
