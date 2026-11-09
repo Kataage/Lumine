@@ -270,6 +270,12 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             {
                 // The borrowed operation finished concurrently.
             }
+            catch (AggregateException)
+            {
+                // An external native SetKill callback can fail; do not
+                // strand the queued Interactive request or its permit.
+                // The borrowed worker still owns its completion/cleanup.
+            }
         }
 
         if (priority == ThumbnailPriority.Interactive
