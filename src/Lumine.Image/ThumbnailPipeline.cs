@@ -9,6 +9,16 @@ public readonly record struct ThumbnailPipelineQueueSnapshot(
     int BackgroundQueued,
     int ActiveWorkers);
 
+// No source paths or names; visible only in owner acceptance diagnostics.
+public readonly record struct ThumbnailActiveWorkSnapshot(
+    long AssetId,
+    ThumbnailPriority Priority,
+    ThumbnailWorkPhase Phase,
+    bool BorrowedInteractiveWorker,
+    bool CancellationRequested,
+    double AgeMilliseconds,
+    double SourceMiB);
+
 public sealed class ThumbnailPipeline : IAsyncDisposable
 {
     private readonly ThumbnailGenerator _generator;
@@ -19,6 +29,10 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private readonly Queue<WorkItem> _background = new();
     private readonly SemaphoreSlim _queuedItems = new(0);
     private readonly SemaphoreSlim _interactiveQueuedItems = new(0);
+    private readonly Dictionary<int, ActiveWorkState> _activeByWorker = [];
+    private CancellationTokenSource? _interactiveLoanCancellation;
+    private static readonly TimeSpan InteractiveBorrowProbe =
+        TimeSpan.FromMilliseconds(100);
     private readonly SemaphoreSlim _queueSlots;
     private readonly SemaphoreSlim _interactiveQueueSlots;
     private readonly CancellationTokenSource _shutdown = new();
@@ -81,6 +95,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         ReservedInteractiveWorkers = options.WorkerCount >= 4 ? 1 : 0;
         _workers = Enumerable.Range(0, options.WorkerCount)
             .Select(index => Task.Run(() => WorkerLoopAsync(
+                index,
                 interactiveOnly: index < ReservedInteractiveWorkers)))
             .ToArray();
     }
@@ -123,6 +138,25 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
     public ThumbnailCacheMaintenanceDiagnosticsSnapshot MaintenanceDiagnostics =>
         _maintenance?.Diagnostics ?? default;
+
+    // Safe snapshot of exact running native jobs, sampled only at idle.
+    public IReadOnlyList<ThumbnailActiveWorkSnapshot> SnapshotActiveWork()
+    {
+        lock (_queueGate)
+        {
+            return _activeByWorker.OrderBy(static pair => pair.Key)
+                .Select(static pair => new ThumbnailActiveWorkSnapshot(
+                    pair.Value.Item.Source.AssetId,
+                    pair.Value.Item.Priority,
+                    pair.Value.Probe.Phase,
+                    pair.Value.Borrowed,
+                    pair.Value.Item.CancellationToken.IsCancellationRequested,
+                    Stopwatch.GetElapsedTime(
+                        pair.Value.StartedAtTimestamp).TotalMilliseconds,
+                    pair.Value.Item.Source.FileSize / 1_048_576.0))
+                .ToArray();
+        }
+    }
 
     public async Task<ThumbnailResult> RequestAsync(
         ThumbnailSource source,
@@ -191,6 +225,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 admissionMilliseconds,
                 Stopwatch.GetTimestamp());
 
+        CancellationTokenSource? loanToPreempt = null;
         lock (_queueGate)
         {
             if (_disposed)
@@ -216,6 +251,24 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                         nameof(priority),
                         priority,
                         "Unknown thumbnail priority.");
+            }
+
+            if (priority == ThumbnailPriority.Interactive)
+            {
+                loanToPreempt = _interactiveLoanCancellation;
+            }
+        }
+
+        // Native libvips kill callbacks must run outside the queue lock.
+        if (loanToPreempt is not null)
+        {
+            try
+            {
+                loanToPreempt.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The borrowed operation finished concurrently.
             }
         }
 
@@ -532,6 +585,12 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
+
+    private sealed record ActiveWorkState(
+        WorkItem Item,
+        long StartedAtTimestamp,
+        ThumbnailGenerationPhaseProbe Probe,
+        bool Borrowed);
 
     private sealed record WorkItem(
         ThumbnailSource Source,
