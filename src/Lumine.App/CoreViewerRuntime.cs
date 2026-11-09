@@ -94,6 +94,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
     internal int ReservedInteractiveThumbnailWorkers =>
         _thumbnailPipeline.ReservedInteractiveWorkers;
 
+    internal IReadOnlyList<ThumbnailActiveWorkSnapshot> SnapshotActiveThumbnailWork() =>
+        _thumbnailPipeline.SnapshotActiveWork();
+
     internal ThumbnailStorageMode ThumbnailStorageMode =>
         _thumbnailPipeline.StorageMode;
 
