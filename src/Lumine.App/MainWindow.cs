@@ -3208,6 +3208,13 @@ public sealed class MainWindow : Window
             // image pipeline's scheduling and first-load benchmark.
             var expectedView = _browsePreferences.ViewMode;
             var expectedDensity = _browsePreferences.Density;
+            var beforeLookahead = viewer.LookaheadDiagnostics;
+            // Sample offscreen bitmap work after a brief idle period.
+            // A one-time passive observation cannot delay first paint,
+            // request a source or increase the native worker budget.
+            _ = ReportDensityLookaheadAfterIdleAsync(
+                layoutShell, expectedView, expectedDensity,
+                started, beforeLookahead.BitmapsPredecoded);
             Avalonia.Threading.Dispatcher.UIThread.Post(
                 () =>
                 {
@@ -3256,6 +3263,51 @@ public sealed class MainWindow : Window
                     "表示設定を保存できませんでした。現在の表示には反映されています。";
             }
         }
+    }
+
+    private async Task ReportDensityLookaheadAfterIdleAsync(
+        CoreViewerShell layoutShell,
+        BrowseViewMode expectedView,
+        int expectedDensity,
+        long changedAt,
+        long predecodedBefore)
+    {
+        // #634: our preceding layout log is from the UI's first Loaded
+        // dispatch and cannot prove that the NEXT offscreen row was
+        // prefetched. Observe progress at 1.5s without holding UI thread
+        // or initiating new source work. Ignore superseded layouts.
+        await Task.Delay(TimeSpan.FromMilliseconds(1500))
+            .ConfigureAwait(false);
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (!ReferenceEquals(_shell, layoutShell)
+                    || _browsePreferences.ViewMode != expectedView
+                    || _browsePreferences.Density != expectedDensity)
+                {
+                    return;
+                }
+
+                var viewer = layoutShell.GridViewer;
+                var state = viewer.Diagnostics;
+                var visible = viewer.ViewportReadiness;
+                var lookahead = viewer.LookaheadDiagnostics;
+                _host?.Log.Write(
+                    "viewer-lookahead",
+                    $"phase=post-density-idle,view={expectedView},"
+                    + $"density={expectedDensity},"
+                    + $"elapsed_ms={System.Diagnostics.Stopwatch.GetElapsedTime(changedAt).TotalMilliseconds:F1},"
+                    + $"visible_tiles={visible.VisibleTiles},"
+                    + $"unready_tiles={visible.UnreadyTiles},"
+                    + $"attached_tiles={state.AttachedTiles},ready_tiles={state.ReadyTiles},"
+                    + $"lookahead_scheduled={lookahead.Scheduled},"
+                    + $"lookahead_cancelled={lookahead.CancelledBeforeCompletion},"
+                    + $"source_prefetch_completed={lookahead.SourcePrefetchCompleted},"
+                    + $"bitmap_predecoded_delta={lookahead.BitmapsPredecoded - predecodedBefore},"
+                    + $"bitmap_predecoded_total={lookahead.BitmapsPredecoded},"
+                    + $"decoded_cache_entries={state.DecodedBitmapEntries}");
+            },
+            DispatcherPriority.Background);
     }
 
     private async Task SaveViewerDefaultsFromSettingsAsync(
