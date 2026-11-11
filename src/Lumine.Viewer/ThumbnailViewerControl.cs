@@ -1808,6 +1808,21 @@ public sealed class ThumbnailViewerControl : UserControl
                 farCount);
     }
 
+    // #634: when background permits are scarce, source requests for the
+    // next likely scroll direction must enter the bounded queue BEFORE
+    // the reverse neighbor. Starting the reverse PrefetchAsync first can
+    // occupy both slots with 16+MP PNG decodes and starve the next row.
+    internal static (
+        long PreferredStart, int PreferredCount,
+        long OppositeStart, int OppositeCount)
+        ResolvePreferredNearSourceFirstForSmoke(
+            int direction,
+            long beforeStart, int beforeCount,
+            long afterStart, int afterCount) =>
+        direction < 0
+            ? (beforeStart, beforeCount, afterStart, afterCount)
+            : (afterStart, afterCount, beforeStart, beforeCount);
+
     // A newly mounted/rearranged viewport can momentarily report
     // an earlier edge than a row-attachment scheduler already targeted.
     // Refresh only for *progress* in the current scroll direction,
@@ -2326,24 +2341,31 @@ public sealed class ThumbnailViewerControl : UserControl
             // presentation hostage. Both tasks are observed and drained
             // on cancellation; source request count/priority is unchanged.
             var nearSourceTasks = new List<Task>(2);
-            if (beforeRanges.NearCount > 0)
+            var nearSources = ResolvePreferredNearSourceFirstForSmoke(
+                direction,
+                beforeRanges.NearStart, beforeRanges.NearCount,
+                afterRanges.NearStart, afterRanges.NearCount);
+            // First admitted source requests take the two bounded
+            // background permits. Put the intended next row FIRST,
+            // including reverse-wheel intent, not always row-before.
+            if (nearSources.PreferredCount > 0)
             {
-                var nearBefore = session.PrefetchAsync(
-                    beforeRanges.NearStart,
-                    beforeRanges.NearCount,
+                var preferredSources = session.PrefetchAsync(
+                    nearSources.PreferredStart,
+                    nearSources.PreferredCount,
                     cancellationToken);
-                TrackTileLoad(nearBefore);
-                nearSourceTasks.Add(nearBefore);
+                TrackTileLoad(preferredSources);
+                nearSourceTasks.Add(preferredSources);
             }
 
-            if (afterRanges.NearCount > 0)
+            if (nearSources.OppositeCount > 0)
             {
-                var nearAfter = session.PrefetchAsync(
-                    afterRanges.NearStart,
-                    afterRanges.NearCount,
+                var oppositeSources = session.PrefetchAsync(
+                    nearSources.OppositeStart,
+                    nearSources.OppositeCount,
                     cancellationToken);
-                TrackTileLoad(nearAfter);
-                nearSourceTasks.Add(nearAfter);
+                TrackTileLoad(oppositeSources);
+                nearSourceTasks.Add(oppositeSources);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -2434,30 +2456,37 @@ public sealed class ThumbnailViewerControl : UserControl
                                     ? checked(reverseRow * columns)
                                     : -1;
 
-                            Task primaryWarm = ordinal < warmPreferred
+                            // Prepare the *entire* next row before
+                            // spending the same two source/Bitmap slots on
+                            // the reverse neighbor. A simultaneous
+                            // Task.WhenAll let a reverse PNG defer the
+                            // next forward wheel row, despite enough
+                            // eventual offscreen cache capacity.
+                            if (ordinal < warmPreferred
                                 && primaryStart >= 0
-                                && primaryStart < session.Count
-                                ? PredecodeNextRowAsync(
+                                && primaryStart < session.Count)
+                            {
+                                await PredecodeNextRowAsync(
                                     session,
                                     primaryStart,
                                     checked((int)Math.Min(
                                         session.Count - primaryStart,
                                         nextRowCount)),
-                                    cancellationToken)
-                                : Task.CompletedTask;
-                            Task reverseWarm = ordinal < warmOpposite
+                                    cancellationToken).ConfigureAwait(false);
+                            }
+
+                            if (ordinal < warmOpposite
                                 && reverseStart >= 0
-                                && reverseStart < session.Count
-                                ? PredecodeNextRowAsync(
+                                && reverseStart < session.Count)
+                            {
+                                await PredecodeNextRowAsync(
                                     session,
                                     reverseStart,
                                     checked((int)Math.Min(
                                         session.Count - reverseStart,
                                         nextRowCount)),
-                                    cancellationToken)
-                                : Task.CompletedTask;
-                            await Task.WhenAll(primaryWarm, reverseWarm)
-                                .ConfigureAwait(false);
+                                    cancellationToken).ConfigureAwait(false);
+                            }
                         }
 
                         // Ensure a full idle lookahead leaves the likely
