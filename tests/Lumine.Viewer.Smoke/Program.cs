@@ -55,6 +55,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyIdleProgressesWithoutScrollingAsync(
                         thumbnailPath);
+                    await VerifyOffscreenPrefetchSurvivesDensityChangeAsync(
+                        thumbnailPath);
                     await VerifyFarSeekResumesIdlePrefetchAsync(
                         thumbnailPath);
                     await VerifyFarSeekForegroundPrecedesSpeculationAsync(
@@ -1304,6 +1306,105 @@ internal static class Program
                 && viewer.LastVisibleAssetIndex == lastBefore
                 && viewer.LookaheadDiagnostics.Scheduled == scheduleBefore,
                 "Idle progressive prefetch stopped at the legacy two-viewport ceiling or unexpectedly changed the viewport.");
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    private static async Task VerifyOffscreenPrefetchSurvivesDensityChangeAsync(
+        string thumbnailPath)
+    {
+        // #634 owner: visible tiles appear to be the only loaded tiles,
+        // especially after changing the Grid display size. Inspect the
+        // predecoded offscreen DESCRIPTOR, not just a queued Prefetch task.
+        // Keep native bounds and priority semantics unchanged.
+        await using var session = new ViewerSession(
+            new DirectFixtureAssetProvider(1_000),
+            new DelayedThumbnailProvider(
+                thumbnailPath, TimeSpan.FromMilliseconds(35)),
+            new ViewerOptions
+            {
+                TileWidth = 120,
+                TileHeight = 120,
+                TileSpacing = 8,
+                PrefetchRows = 2,
+                PrefetchDelay = TimeSpan.FromMilliseconds(1),
+                DecodedBitmapEntryLimit = 512,
+                DecodedBitmapByteLimit = 512L * 1024 * 1024
+            });
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 900,
+            Height = 600,
+            Content = viewer
+        };
+        window.Show();
+        try
+        {
+            for (var attempt = 0;
+                 attempt < 2_000
+                 && (viewer.Diagnostics.AttachedTiles == 0
+                     || viewer.Diagnostics.ReadyTiles
+                        < viewer.Diagnostics.AttachedTiles);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.Diagnostics.AttachedTiles > 0,
+                "Offscreen density smoke did not mount its initial tiles.");
+
+            foreach (var density in new[] { 0, 2, 1 })
+            {
+                var scheduledBefore = viewer.LookaheadDiagnostics.Scheduled;
+                viewer.SetLayout(ViewerLayoutMode.Grid, density);
+
+                for (var attempt = 0;
+                     attempt < 2_000
+                     && (viewer.Diagnostics.ReadyTiles == 0
+                         || viewer.LastVisibleAssetIndex is null);
+                     attempt++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(1);
+                }
+
+                Require(
+                    viewer.Diagnostics.ReadyTiles > 0
+                    && viewer.LastVisibleAssetIndex is not null,
+                    $"Grid density {density} did not mount its visible tiles.");
+
+                var offscreenRow = (viewer.LastVisibleAssetIndex!.Value
+                    / viewer.Columns) + 1;
+                var offscreenAsset = offscreenRow * viewer.Columns;
+                Require(
+                    offscreenAsset < viewer.AssetCount,
+                    "Offscreen density smoke needs another row.");
+
+                for (var attempt = 0;
+                     attempt < 3_000
+                     && !viewer.IsAssetWarmForSmoke(offscreenAsset);
+                     attempt++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(1);
+                }
+
+                Require(
+                    viewer.IsAssetWarmForSmoke(offscreenAsset),
+                    $"Grid density {density} prepared only visible tiles; "
+                    + $"next offscreen asset {offscreenAsset} was not warm. "
+                    + $"lookahead={viewer.LookaheadDiagnostics}");
+                Require(
+                    viewer.LookaheadDiagnostics.Scheduled > scheduledBefore,
+                    $"Grid density {density} did not restart offscreen lookahead.");
+            }
         }
         finally
         {
