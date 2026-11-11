@@ -129,6 +129,35 @@ internal static class Program
             && reverse.ImminentCount == 7,
             "Viewport planner did not give reverse scrolling the prior row.");
 
+        // #634: next-row source I/O must take scarce Background permits
+        // before reverse offscreen I/O in either scroll direction.
+        // In particular, forward (down) navigation used to start the
+        // row-above range first, potentially occupying both permits.
+        var forwardNear =
+            ThumbnailViewerControl.ResolvePreferredNearSourceFirstForSmoke(
+                1, beforeStart: 70, beforeCount: 7,
+                afterStart: 112, afterCount: 7);
+        var backwardNear =
+            ThumbnailViewerControl.ResolvePreferredNearSourceFirstForSmoke(
+                -1, beforeStart: 70, beforeCount: 7,
+                afterStart: 112, afterCount: 7);
+        var forwardAtLibraryEnd =
+            ThumbnailViewerControl.ResolvePreferredNearSourceFirstForSmoke(
+                1, beforeStart: 70, beforeCount: 7,
+                afterStart: 0, afterCount: 0);
+        Require(
+            forwardNear.PreferredStart == 112
+            && forwardNear.PreferredCount == 7
+            && forwardNear.OppositeStart == 70
+            && forwardNear.OppositeCount == 7
+            && backwardNear.PreferredStart == 70
+            && backwardNear.PreferredCount == 7
+            && backwardNear.OppositeStart == 112
+            && backwardNear.OppositeCount == 7
+            && forwardAtLibraryEnd.PreferredCount == 0
+            && forwardAtLibraryEnd.OppositeCount == 7,
+            "The next offscreen row was not admitted before the opposite direction.");
+
         // Hard cap independent of the number of rows native Avalonia
         // happens to have pre-realized outside the visible range.
         var budgeted = ViewerViewportRequestPlanner.Build(
