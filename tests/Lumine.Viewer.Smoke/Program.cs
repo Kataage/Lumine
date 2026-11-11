@@ -3196,6 +3196,42 @@ internal static class Program
             && gridPresentation.ActionCount == 2,
             "Grid browse parity lost filename/size/favorite/rating or direct detail/open actions.");
 
+        // Owner's #634 formal 4,063-image review: Grid display density
+        // changed from 0 to 1 and subsequent browsing felt slower.
+        // This lightweight headless regression cannot measure real GPU
+        // present timing, but guards against losing ready decoded bitmaps
+        // or regenerating already-resident sources during 1 -> 0 -> 1
+        // (and large 2) density transitions.
+        var originalThumbnailRequests = session.Diagnostics.ThumbnailRequests;
+        foreach (var density in new[] { 0, 1, 2, 1 })
+        {
+            var beforeHits = viewer.WarmTileHitCountForSmoke;
+            viewer.SetLayout(
+                ViewerLayoutMode.Grid,
+                density);
+
+            for (var attempt = 0;
+                 attempt < 250 && !viewer.IsAssetReady(0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IsAssetReady(0),
+                $"Grid density {density} did not restore the visible tile.");
+            Require(
+                session.Diagnostics.ThumbnailRequests == originalThumbnailRequests,
+                $"Grid density {density} initiated a redundant thumbnail source generation.");
+            Require(
+                viewer.WarmTileHitCountForSmoke > beforeHits,
+                $"Grid density {density} did not synchronously reuse the decoded bitmap.");
+            Require(
+                viewer.FirstVisibleAssetIndex == 0,
+                $"Grid density {density} lost the current viewport anchor.");
+        }
+
         viewer.SetLayout(
             ViewerLayoutMode.List,
             densityLevel: 1);
