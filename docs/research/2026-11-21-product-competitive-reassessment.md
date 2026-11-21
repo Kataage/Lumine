@@ -105,3 +105,13 @@
 - 所見には「確認日時」「取得元」「証拠レベル」を付ける。断定不可能ならUNKNOWN。
 - 既存の製品受け入れを迂回しない。新たなIssueはギャップの確認後に作成する。
 - AIなしでも高速で使えるlocal-firstを維持しつつ、AI制作者の作業全体の完成度を問う。
+
+## 9. 画像メタデータ抽出の第1次コード追跡（2026-11-21）
+
+- [ImageExifMetadataProbe](../../src/Lumine.Image/ImageExifMetadataProbe.cs): NetVips `GetFields()` から実際に読んでいるのは camera model、lens、focal length、aperture、shutter speed、ISO、撮影日時、GPS。**ComfyUI workflow JSON / Forge parameters / NovelAI の画像生成情報を抽出するコードは、このクラスには含まれない**（CODE）。
+- [LibraryRepository.Exif](../../src/Lumine.Library/LibraryRepository.Exif.cs): `asset_exif_metadata` への保存項目も上記撮影EXIFに限定（CODE）。
+- [CreativeArchiveModels](../../src/Lumine.Library/CreativeArchiveModels.cs): `GenerationGroupInfo` / `GenerationGroupCreate` にPrompt、モデル名、Sampler、Scheduler、Steps、CFG、WorkflowJson等の保存フィールドは存在（CODE）。これは画像個別の原ファイルからのメタデータ自動抽出やLoRA・Seed検索を保証しない。
+- [LibraryModels](../../src/Lumine.Library/LibraryModels.cs): `AssetQuery` の条件はSearchText、RequiredTags、Rating、Favorite、Status、Color、Folder等で、LoRAやSeedの専用predicateをこの型では公開していない（CODE）。
+- `src/Lumine.Image` の現在のソース構成と `src/Lumine.Library` のファイル一覧では、明示的なForge/ComfyUI/NovelAI parser moduleは確認できていない。ただし複数ファイルに埋め込まれた処理や別プロジェクトまで排除できず、**リポジトリ全体としての実装不存在はまだUNKNOWN**。
+
+**暫定的な事実:** Coreが「画像の撮影EXIFを扱える」ことと「画像生成情報を構造的に取り込み、検索できる」ことの間には、確認できる実装上の差分がある。これを修正Issueへ昇格する前に、production/testコード全体で既存機能の有無を確定する。
